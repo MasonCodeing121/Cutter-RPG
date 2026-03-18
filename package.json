@@ -1,5 +1,5 @@
 {
-  "name": "rpg-server",
+  "name": "Cutter-RPG",
   "version": "1.0.0",
   "main": "server.js",
   "dependencies": {
