@@ -1,12 +1,11 @@
 {
-  "name": "Cutter-RPG",
+  "name": "rpg-server",
   "version": "1.0.0",
-  "description": "Multiplayer backend for RPG game",
   "main": "server.js",
+  "dependencies": {
+    "socket.io": "^4.7.2"
+  },
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "socket.io": "^4.7.0"
   }
 }
