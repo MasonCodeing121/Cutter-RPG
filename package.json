@@ -1,5 +1,5 @@
 {
-  "name": "rpg-multiplayer-server",
+  "name": "Cutter-RPG",
   "version": "1.0.0",
   "description": "Multiplayer backend for RPG game",
   "main": "server.js",
