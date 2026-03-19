@@ -9,33 +9,11 @@ const socket = io("https://mason-server.onrender.com", { transports: ['websocket
 let remotePlayers = {}; 
 let isOnline = false;
 let lastTime = 0;
-let currentRoomId = null;
 
-socket.on('connect', () => { 
-    isOnline = true;
-    console.log('Connected to server:', socket.id);
-});
-
-socket.on('room:joined', (data) => {
-    currentRoomId = data.room.id;
-    console.log('Joined room:', currentRoomId);
-});
-
-socket.on('game:event', (data) => {
-    if (data.senderId !== socket.id && data.payload) {
-        remotePlayers[data.senderId] = data.payload;
-    }
-});
-
-socket.on('room:player_left', (data) => {
-    if (data.player) {
-        delete remotePlayers[data.player.id];
-    }
-});
-
-socket.on('disconnect', () => {
-    isOnline = false;
-    console.log('Disconnected from server');
+socket.on('connect', () => { isOnline = true; });
+socket.on('update-players', (data) => {
+    remotePlayers = data;
+    if (socket.id) delete remotePlayers[socket.id];
 });
 
 // --- 2. ASSETS ---
@@ -166,20 +144,8 @@ function animate(currentTime) {
                 }
             });
 
-            // Send player data to server
-            if (isOnline && currentRoomId && gameFrame % 3 === 0) {
-                socket.emit('game:event', { 
-                    roomId: currentRoomId,
-                    event: 'player:move',
-                    payload: { 
-                        x: camera.x, 
-                        y: camera.y, 
-                        dir: player.direction, 
-                        moving: player.isMoving, 
-                        swinging: player.isSwinging, 
-                        hp: player.hp 
-                    }
-                });
+            if (isOnline && gameFrame % 3 === 0) {
+                socket.emit('move', { x: camera.x, y: camera.y, dir: player.direction, moving: player.isMoving, swinging: player.isSwinging, hp: player.hp });
             }
         }
 
@@ -189,7 +155,7 @@ function animate(currentTime) {
 
         if (grassPattern) { ctx.fillStyle = grassPattern; ctx.fillRect(camera.x - 2500, camera.y - 2500, 5000, 5000); }
         ctx.drawImage(images.shop, shopBounds.x, shopBounds.y, shopBounds.w, shopBounds.h);
-        
+
         let drawList = [];
         trees.forEach(t => { 
             if(t.wood <= 0) { t.respawn += dt; if(t.respawn > 15) { t.wood = 5; t.respawn = 0; t.shake = 0; } }
@@ -328,25 +294,10 @@ canvas.addEventListener('mousedown', e => {
         if (my > 520) gameState = "MENU";
     }
     else if (gameState === "MULTI_LIST") {
-        serverList.forEach((s, i) => { 
-            if (my > 100 + i*60 && my < 150 + i*60) { 
-                if(isOnline) socket.emit('room:join', { roomId: s, playerName: 'Player' }); 
-                initWorld(12345); 
-                gameState = "GAME"; 
-                animate(performance.now()); 
-            }
-        });
+        serverList.forEach((s, i) => { if (my > 100 + i*60 && my < 150 + i*60) { if(isOnline) socket.emit('join-room', s); initWorld(12345); gameState = "GAME"; animate(performance.now()); }});
         if (my > 400 && my < 450) {
             let n = prompt("Server Name:"); 
-            if(n) { 
-                serverList.push(n); 
-                localStorage.setItem('rpg_servers', JSON.stringify(serverList)); 
-                if(isOnline) socket.emit('room:create', { roomId: n, name: n, maxPlayers: 8 });
-                if(isOnline) socket.emit('room:join', { roomId: n, playerName: 'Player' });
-                initWorld(12345); 
-                gameState = "GAME"; 
-                animate(performance.now()); 
-            }
+            if(n) { serverList.push(n); localStorage.setItem('rpg_servers', JSON.stringify(serverList)); if(isOnline) socket.emit('join-room', n); initWorld(12345); gameState = "GAME"; animate(performance.now()); }
         }
         if (my > 520) gameState = "MENU";
     }
