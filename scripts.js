@@ -1,11 +1,10 @@
-// --- 1. CORE ENGINE & MULTIPLAYER SETUP ---
+// --- 1. SETUP & NETWORKING ---
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 600; canvas.height = 600;
 ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
-// Live Render Server
 const socket = io("https://cutter-rpg-server.onrender.com"); 
 let remotePlayers = {}; 
 
@@ -14,22 +13,7 @@ socket.on('update-players', (data) => {
     if (socket.id) delete remotePlayers[socket.id]; 
 });
 
-socket.on('tree-chopped', (data) => {
-    if (trees[data.index]) {
-        trees[data.index].wood = data.newWood;
-    }
-});
-
-function broadcastMovement() {
-    if (socket && socket.connected && gameState === "GAME") {
-        socket.emit('move', {
-            x: camera.x, y: camera.y, 
-            dir: player.direction, moving: player.isMoving 
-        });
-    }
-}
-
-// --- 2. ASSETS & UI DATA ---
+// --- 2. ASSETS ---
 const assetPaths = {
     sprite: "images/image.png", axe: "images/axe.png", log: "images/log.png",
     grass: "images/grass.jpg", tree: "images/tree.png", stump: "images/c_tree.png",
@@ -38,34 +22,27 @@ const assetPaths = {
     slime: "images/slime.png" 
 };
 
-// Original Button Layouts
-const btnNew = { x: 150, y: 250, w: 300, h: 50, text: "NEW WORLD" };
-const btnLoad = { x: 150, y: 320, w: 300, h: 50, text: "LOAD WORLD" };
-const btnMulti = { x: 150, y: 390, w: 300, h: 50, text: "MULTIPLAYER" };
-
-// --- 3. STATE VARIABLES ---
-let gameState = "MENU"; 
-let typingName = "";
+// --- 3. STATE & SAVES ---
+let gameState = "MENU";
 let gameFrame = 0;
 let showShopGUI = false;
-const stagger = 8;
-const animations = { "down": 0, "left": 1, "right": 2, "up": 3 };
-
-let player = {
-    direction: "down", isMoving: false, speed: 6,
-    hp: 100, maxHp: 100, wood: 0, money: 0, axeLevel: 1
-};
-
+let typingName = "";
 let camera = { x: 0, y: 0 };
 let trees = [], mobs = [];
 const keys = {};
 
-const shopBuilding = { x: 800, y: 800, w: 489, h: 272 };
-const npc = { x: 400, y: 1200, range: 120 };
+// Load saved worlds and servers from LocalStorage
+let localWorlds = JSON.parse(localStorage.getItem('rpg_worlds') || '[]');
+let serverList = JSON.parse(localStorage.getItem('rpg_servers') || '[]');
+
+let player = {
+    direction: "down", isMoving: false, speed: 6,
+    wood: 0, money: 0, axeLevel: 1,
+    isSwinging: false, swingTimer: 0
+};
 
 // 3x4 Slime Sheet
-const SLIME_COLS = 3;
-const SLIME_ROWS = 4;
+const SLIME_COLS = 3; const SLIME_ROWS = 4;
 
 // --- 4. ENGINE FUNCTIONS ---
 function initTrees(seed) {
@@ -76,84 +53,116 @@ function initTrees(seed) {
         for (let y = -2000; y < 2000; y += 220) {
             s = (s * 9301 + 49297) % 233280;
             if (Math.hypot(x, y) > 400 && s > 0.6) {
-                trees.push({ x, y, wood: 5 });
+                trees.push({ x, y, wood: 5, shake: 0 });
             }
         }
     }
 }
 
-function drawButton(btn) {
-    ctx.fillStyle = "#3498db";
-    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+function drawButton(x, y, w, h, text, color = "#3498db") {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = "white";
-    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.strokeRect(x, y, w, h);
     ctx.fillStyle = "white";
-    ctx.font = "20px Arial";
+    ctx.font = "18px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 1.5);
+    ctx.fillText(text, x + w/2, y + h/1.7);
 }
 
-// --- 5. MAIN RENDER LOOP ---
+// --- 5. GAME LOOP ---
 function animate() {
-    if (showShopGUI) {
-        // Shop UI restored
-        ctx.fillStyle = "rgba(0,0,0,0.8)";
-        ctx.fillRect(100, 100, 400, 400);
-        ctx.fillStyle = "white";
-        ctx.fillText("SHOP (CLICK RED BOX TO EXIT)", 300, 150);
-        ctx.fillStyle = "red";
-        ctx.fillRect(430, 110, 50, 30);
-        return;
-    }
-
-    // Movement & Multiplayer Sync
+    // 1. Logic
     let mx = (keys['KeyD']?1:0) - (keys['KeyA']?1:0);
     let my = (keys['KeyS']?1:0) - (keys['KeyW']?1:0);
-    player.isMoving = (mx !== 0 || my !== 0);
+    player.isMoving = (mx !== 0 || my !== 0) && !player.isSwinging;
+    
     if (player.isMoving) {
         camera.x += mx * player.speed; camera.y += my * player.speed;
         if(mx > 0) player.direction = "right"; else if(mx < 0) player.direction = "left";
         else if(my > 0) player.direction = "down"; else if(my < 0) player.direction = "up";
+        socket.emit('move', { x: camera.x, y: camera.y, dir: player.direction, moving: true });
     }
-    broadcastMovement();
 
-    // Drawing World
+    if (player.isSwinging) {
+        player.swingTimer--;
+        if (player.swingTimer <= 0) player.isSwinging = false;
+    }
+
+    // 2. Rendering
+    ctx.clearRect(0, 0, 600, 600);
+    
+    // World Translation
     ctx.save();
     ctx.translate(-camera.x + 300, -camera.y + 300);
-    if (grassPattern) {
-        ctx.fillStyle = grassPattern;
-        ctx.fillRect(camera.x - 1000, camera.y - 1000, 2000, 2000);
-    }
-    ctx.restore();
+    if (grassPattern) { ctx.fillStyle = grassPattern; ctx.fillRect(camera.x - 600, camera.y - 600, 1200, 1200); }
+    
+    // Shop Building near spawn
+    ctx.drawImage(images.shop, 700, 700, 300, 200);
 
-    // Entity Sorting
+    // Entities
     let drawList = trees.map((t, i) => ({ ...t, d: t.wood > 0 ? 't' : 's', index: i }));
     drawList.push({ x: camera.x, y: camera.y, d: 'p', dir: player.direction, moving: player.isMoving });
     drawList.sort((a, b) => a.y - b.y);
 
     drawList.forEach(obj => {
         let sx = obj.x - camera.x + 300, sy = obj.y - camera.y + 300;
-        if (obj.d === 't') ctx.drawImage(images.tree, sx - 80, sy - 160, 160, 180);
+        let shake = obj.shake > 0 ? Math.sin(gameFrame) * 5 : 0;
+        if (obj.shake > 0) obj.shake--;
+
+        if (obj.d === 't') ctx.drawImage(images.tree, sx - 80 + shake, sy - 160, 160, 180);
         else if (obj.d === 's') ctx.drawImage(images.stump, sx - 40, sy - 40, 80, 80);
         else if (obj.d === 'p') {
             let grid = images.sprite.width / 4;
-            let f = (obj.moving ? Math.floor(gameFrame / stagger) % 4 : 0);
+            let f = (obj.moving ? Math.floor(gameFrame / 8) % 4 : 0);
             ctx.drawImage(images.sprite, f * grid, animations[obj.dir] * grid, grid, grid, sx - 32, sy - 32, 64, 64);
+            
+            // AXE SWING RENDER
+            if (player.isSwinging) {
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.rotate(player.swingTimer * 0.2);
+                ctx.drawImage(images.axe, 10, -30, 40, 40);
+                ctx.restore();
+            }
         }
     });
+    ctx.restore();
+
+    // 3. UI OVERLAY
+    // Coordinates (Top Left)
+    ctx.fillStyle = "white"; ctx.textAlign = "left"; ctx.font = "14px monospace";
+    ctx.fillText(`X: ${Math.floor(camera.x)} Y: ${Math.floor(camera.y)}`, 10, 20);
+
+    // Mini-map (Top Right)
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(480, 10, 110, 110);
+    ctx.fillStyle = "lime"; ctx.fillRect(480 + 55 + (camera.x/50), 10 + 55 + (camera.y/50), 4, 4);
 
     gameFrame++;
 }
 
-// --- 6. INPUTS & ORIGINAL UI LOGIC ---
+// --- 6. INPUTS & MENU LOGIC ---
 window.addEventListener('keydown', e => {
     if (gameState === "CREATE") {
-        if (e.key === "Enter") { initTrees(Date.now()); gameState = "GAME"; }
-        else if (e.key === "Backspace") typingName = typingName.slice(0, -1);
+        if (e.key === "Enter" && typingName) {
+            localWorlds.push({ name: typingName, seed: Date.now() });
+            localStorage.setItem('rpg_worlds', JSON.stringify(localWorlds));
+            initTrees(Date.now()); gameState = "GAME";
+        } else if (e.key === "Backspace") typingName = typingName.slice(0, -1);
         else if (e.key.length === 1) typingName += e.key;
-        return;
     }
     keys[e.code] = true;
+
+    if (e.code === "Space" && gameState === "GAME" && !player.isSwinging) {
+        player.isSwinging = true; player.swingTimer = 15;
+        // Hit logic
+        trees.forEach(t => {
+            if (t.wood > 0 && Math.hypot(camera.x - t.x, camera.y - t.y) < 100) {
+                t.wood--; t.shake = 10;
+                if (t.wood <= 0) player.wood += 5;
+            }
+        });
+    }
 });
 
 window.addEventListener('keyup', e => keys[e.code] = false);
@@ -162,34 +171,56 @@ canvas.addEventListener('mousedown', e => {
     const rect = canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top;
     
     if (gameState === "MENU") {
-        if (mx > btnNew.x && mx < btnNew.x + btnNew.w && my > btnNew.y && my < btnNew.y + btnNew.h) gameState = "CREATE";
-        if (mx > btnMulti.x && mx < btnMulti.x + btnMulti.w && my > btnMulti.y && my < btnMulti.y + btnMulti.h) {
-            const room = prompt("Room Name:");
-            if (room) { socket.emit('join-room', room); initTrees(12345); gameState = "GAME"; }
+        if (my > 250 && my < 300) gameState = "CREATE";
+        if (my > 320 && my < 370) gameState = "LOAD_LIST";
+        if (my > 390 && my < 440) gameState = "MULTI_LIST";
+    } 
+    else if (gameState === "LOAD_LIST") {
+        localWorlds.forEach((w, i) => {
+            if (my > 100 + i*60 && my < 150 + i*60) { initTrees(w.seed); gameState = "GAME"; }
+        });
+        if (my > 500) gameState = "MENU";
+    }
+    else if (gameState === "MULTI_LIST") {
+        serverList.forEach((s, i) => {
+            if (my > 100 + i*60 && my < 150 + i*60) { socket.emit('join-room', s); initTrees(12345); gameState = "GAME"; }
+        });
+        if (drawButton(150, 400, 300, 50, "ADD SERVER")) {
+            let n = prompt("Server Name:"); 
+            if(n) { serverList.push(n); localStorage.setItem('rpg_servers', JSON.stringify(serverList)); }
         }
+        if (my > 500) gameState = "MENU";
     }
 });
 
-// --- 7. LOAD & START ---
-const images = {};
-let grassPattern, loaded = 0;
+// --- 7. START ---
+const images = {}; let grassPattern, loaded = 0;
 for (let k in assetPaths) {
-    images[k] = new Image();
-    images[k].src = assetPaths[k];
+    images[k] = new Image(); images[k].src = assetPaths[k];
     images[k].onload = () => {
         if (k === 'grass') grassPattern = ctx.createPattern(images.grass, 'repeat');
         if (++loaded === Object.keys(assetPaths).length) {
             function main() {
-                ctx.clearRect(0,0,600,600);
                 if (gameState === "GAME") animate();
-                else if (gameState === "MENU") {
-                    if (images.background) ctx.drawImage(images.background, 0, 0, 600, 600);
-                    drawButton(btnNew); drawButton(btnLoad); drawButton(btnMulti);
-                } else if (gameState === "CREATE") {
-                    ctx.fillStyle = "black"; ctx.fillRect(0,0,600,600);
-                    ctx.fillStyle = "white"; ctx.textAlign = "center";
-                    ctx.fillText("Name World: " + typingName, 300, 250);
-                    ctx.fillText("Press ENTER to start", 300, 350);
+                else {
+                    ctx.clearRect(0,0,600,600);
+                    if (images.background) ctx.drawImage(images.background, 0,0,600,600);
+                    if (gameState === "MENU") {
+                        drawButton(150, 250, 300, 50, "NEW WORLD");
+                        drawButton(150, 320, 300, 50, "LOAD WORLD");
+                        drawButton(150, 390, 300, 50, "MULTIPLAYER");
+                    } else if (gameState === "LOAD_LIST") {
+                        ctx.fillText("SELECT WORLD", 300, 50);
+                        localWorlds.forEach((w, i) => drawButton(150, 100 + i*60, 300, 50, w.name));
+                        drawButton(150, 520, 300, 40, "BACK", "gray");
+                    } else if (gameState === "MULTI_LIST") {
+                        ctx.fillText("SERVER LIST", 300, 50);
+                        serverList.forEach((s, i) => drawButton(150, 100 + i*60, 300, 50, s));
+                        drawButton(150, 400, 300, 50, "ADD SERVER", "green");
+                        drawButton(150, 520, 300, 40, "BACK", "gray");
+                    } else if (gameState === "CREATE") {
+                        ctx.fillStyle="white"; ctx.fillText("WORLD NAME: " + typingName, 300, 300);
+                    }
                 }
                 requestAnimationFrame(main);
             }
