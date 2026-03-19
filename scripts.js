@@ -20,7 +20,9 @@ socket.on('update-players', (data) => {
 const assetPaths = {
     sprite: "images/image.png", axe: "images/axe.png", grass: "images/grass.jpg",
     tree: "images/tree.png", stump: "images/c_tree.png", shop: "images/shop.png",
-    background: "images/t_background.png", log: "images/log.png", house: "images/house.png" 
+    background: "images/t_background.png", log: "images/log.png", house: "images/house.png",
+    bush: "images/bush.png", // <--- NEW ASSET: BUSH
+    leaves: "images/leaves.png" // Assuming you'll have a leaves sprite
 };
 
 // --- 3. STATE ---
@@ -29,11 +31,11 @@ let gameFrame = 0;
 let typingName = "";
 let showShop = false;
 let camera = { x: 0, y: 0 };
-let trees = [], houses = [];
+let trees = [], houses = [], bushes = []; // <--- NEW: BUSHES ARRAY
 const keys = {};
 const animations = { "down": 0, "left": 1, "right": 2, "up": 3 };
 
-let inventory = [{id: 'axe'}, {id: 'log'}, {id: 'blueprint'}, {id: null}];
+let inventory = [{id: 'axe'}, {id: 'log'}, {id: 'blueprint'}, {id: 'leaves', count: 0}]; // <--- NEW: LEAVES INVENTORY SLOT
 let selectedSlot = 0;
 let marker = null; 
 
@@ -42,21 +44,25 @@ let serverList = JSON.parse(localStorage.getItem('rpg_servers') || '[]');
 
 let player = {
     direction: "down", isMoving: false, 
-    baseSpeed: 250, // Slowed down for better playability
-    wood: 0, money: 0, isSwinging: false, swingTimer: 0
+    baseSpeed: 250, 
+    wood: 0, money: 0, leaves: 0, isSwinging: false, swingTimer: 0 // <--- NEW: LEAVES COUNT
 };
 
 const shopBounds = { x: 700, y: 700, w: 250, h: 150 };
 
 // --- 4. ENGINE FUNCTIONS ---
-function initTrees(seed) {
-    trees = []; houses = [];
+function initTrees(seed) { // Renamed from initTrees to initWorld for clarity
+    trees = []; houses = []; bushes = []; // <--- CLEAR BUSHES ON NEW WORLD
     let s = seed || 12345;
     const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
     for (let x = -2000; x < 2000; x += 250) {
         for (let y = -2000; y < 2000; y += 250) {
-            if (Math.hypot(x, y) > 400 && rnd() > 0.6) {
-                trees.push({ x, y, wood: 5, shake: 0, respawn: 0 });
+            if (Math.hypot(x, y) > 400) {
+                if (rnd() > 0.6) { // Probability for trees
+                    trees.push({ x, y, wood: 5, shake: 0, respawn: 0 });
+                } else if (rnd() > 0.6) { // Probability for bushes (less common than trees)
+                    bushes.push({ x, y, health: 3, shake: 0, respawn: 0 }); // <--- NEW: BUSHES INITIALIZED
+                }
             }
         }
     }
@@ -64,6 +70,7 @@ function initTrees(seed) {
 
 function checkCollision(nx, ny) {
     for (let t of trees) if (t.wood > 0 && Math.hypot(nx - t.x, ny - t.y) < 50) return true;
+    for (let b of bushes) if (b.health > 0 && Math.hypot(nx - b.x, ny - b.y) < 30) return true; // <--- NEW: BUSH COLLISIONS
     for (let h of houses) if (nx > h.x - 80 && nx < h.x + 80 && ny > h.y - 60 && ny < h.y + 60) return true;
     if (nx > shopBounds.x && nx < shopBounds.x + shopBounds.w && ny > shopBounds.y && ny < shopBounds.y + shopBounds.h) return true;
     return false;
@@ -99,7 +106,11 @@ function animate(currentTime) {
             if (player.isSwinging) { player.swingTimer -= dt * 30; if (player.swingTimer <= 0) player.isSwinging = false; }
 
             if (isOnline && gameFrame % 3 === 0) {
-                socket.emit('move', { x: camera.x, y: camera.y, dir: player.direction, moving: player.isMoving, swinging: player.isSwinging, wood: player.wood });
+                socket.emit('move', { 
+                    x: camera.x, y: camera.y, dir: player.direction, 
+                    moving: player.isMoving, swinging: player.isSwinging, 
+                    wood: player.wood, leaves: player.leaves // <--- NEW: SYNC LEAVES
+                });
             }
         }
 
@@ -112,11 +123,12 @@ function animate(currentTime) {
         
         let drawList = [];
         trees.forEach(t => { 
-            if(t.wood <= 0) {
-                t.respawn += dt; 
-                if(t.respawn > 15) { t.wood = 5; t.respawn = 0; t.shake = 0; } 
-            }
+            if(t.wood <= 0) { t.respawn += dt; if(t.respawn > 15) { t.wood = 5; t.respawn = 0; t.shake = 0; } }
             drawList.push({...t, type: t.wood > 0 ? 'tree' : 'stump'}); 
+        });
+        bushes.forEach(b => { // <--- NEW: BUSH DRAW LOGIC AND RESPAWN
+            if(b.health <= 0) { b.respawn += dt; if(b.respawn > 10) { b.health = 3; b.respawn = 0; b.shake = 0; } }
+            drawList.push({...b, type: b.health > 0 ? 'bush' : 'stump'}); // Using stump for now if bush is 'dead'
         });
         houses.forEach(h => drawList.push({ ...h, type: 'built_house' }));
         for (let id in remotePlayers) drawList.push({ ...remotePlayers[id], type: 'other' });
@@ -126,9 +138,11 @@ function animate(currentTime) {
         drawList.forEach(obj => {
             let sX = (obj.shake > 0) ? Math.sin(gameFrame * 0.8) * 4 : 0;
             if (obj.shake > 0) obj.shake -= dt * 40;
+
             if (obj.type === 'tree') ctx.drawImage(images.tree, obj.x - 80 + sX, obj.y - 160, 160, 180);
             else if (obj.type === 'stump') ctx.drawImage(images.stump, obj.x - 40, obj.y - 40, 80, 80);
-            else if (obj.type === 'built_house') ctx.drawImage(images.house, obj.x - 100, obj.y - 140, 200, 200); // Bigger House
+            else if (obj.type === 'bush') ctx.drawImage(images.bush, obj.x - 30 + sX, obj.y - 40, 60, 60); // <--- NEW: DRAW BUSH
+            else if (obj.type === 'built_house') ctx.drawImage(images.house, obj.x - 100, obj.y - 140, 200, 200);
             else if (obj.type === 'player' || obj.type === 'other') {
                 let grid = images.sprite.width / 4;
                 let isM = (obj.type === 'player') ? player.isMoving : obj.moving;
@@ -148,6 +162,7 @@ function animate(currentTime) {
         // Minimap
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(470, 10, 120, 120);
         trees.forEach(t => { if(t.wood > 0) { ctx.fillStyle = "#5d4037"; ctx.fillRect(470 + 60 + (t.x/40), 10 + 60 + (t.y/40), 2, 2); } });
+        bushes.forEach(b => { if(b.health > 0) { ctx.fillStyle = "#228B22"; ctx.fillRect(470 + 60 + (b.x/40), 10 + 60 + (b.y/40), 2, 2); } }); // <--- NEW: BUSHES ON MINIMAP
         ctx.fillStyle = "lime"; ctx.fillRect(470 + 60 + (camera.x/40), 10 + 60 + (camera.y/40), 5, 5);
         if (marker) { ctx.fillStyle = "red"; ctx.fillRect(470 + 60 + (marker.x/40), 10 + 60 + (marker.y/40), 5, 5); }
 
@@ -168,7 +183,8 @@ function animate(currentTime) {
             ctx.fillStyle = "rgba(0,0,0,0.9)"; ctx.fillRect(100, 100, 400, 400);
             ctx.fillStyle = "white"; ctx.fillText("SHOP MENU", 300, 150);
             drawButton(200, 250, 200, 50, "SELL ALL WOOD", "#27ae60");
-            ctx.fillText(`$${player.money}`, 300, 350);
+            drawButton(200, 320, 200, 50, "SELL ALL LEAVES", "#27ae60"); // <--- NEW: SELL LEAVES
+            ctx.fillText(`$${player.money}`, 300, 400);
         }
 
         // Inventory
@@ -179,6 +195,7 @@ function animate(currentTime) {
             if (itm.id === 'axe') ctx.drawImage(images.axe, 200 + i * 55, 540, 30, 30);
             if (itm.id === 'log') { ctx.drawImage(images.log, 200 + i * 55, 540, 30, 30); ctx.fillStyle="white"; ctx.fillText(player.wood, 230 + i * 55, 575); }
             if (itm.id === 'blueprint') ctx.drawImage(images.house, 200 + i * 55, 540, 30, 30);
+            if (itm.id === 'leaves') { ctx.drawImage(images.leaves, 200 + i * 55, 540, 30, 30); ctx.fillStyle="white"; ctx.fillText(player.leaves, 230 + i * 55, 575); } // <--- NEW: DRAW LEAVES INVENTORY
         }
     }
 
@@ -195,7 +212,7 @@ window.addEventListener('keydown', e => {
         return;
     }
     if (e.code === "KeyE" && gameState === "GAME") {
-        if (Math.hypot(camera.x - (shopBounds.x + 125), camera.y - (shopBounds.y + 75)) < 200) showShop = !showShop;
+        if (Math.hypot(camera.x - (shopBounds.x + 125), camera.y - (shopBounds.y + 75)) < 180) showShop = !showShop;
     }
     keys[e.code] = true;
     if (["1","2","3","4"].includes(e.key)) selectedSlot = parseInt(e.key) - 1;
@@ -204,7 +221,10 @@ window.addEventListener('keydown', e => {
     if (e.code === "Space" && gameState === "GAME" && !player.isSwinging && !showShop) {
         if (inventory[selectedSlot].id === 'axe') {
             player.isSwinging = true; player.swingTimer = 10;
+            // Check for trees
             trees.forEach(t => { if (t.wood > 0 && Math.hypot(camera.x - t.x, camera.y - t.y) < 110) { t.wood--; t.shake = 10; if (t.wood <= 0) player.wood += 5; } });
+            // Check for bushes
+            bushes.forEach(b => { if (b.health > 0 && Math.hypot(camera.x - b.x, camera.y - b.y) < 60) { b.health--; b.shake = 10; if (b.health <= 0) player.leaves += 2; } }); // <--- NEW: CHOP BUSHES
         }
     }
 });
@@ -218,8 +238,16 @@ canvas.addEventListener('contextmenu', e => {
 canvas.addEventListener('mousedown', e => {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    if (showShop && mx > 200 && mx < 400 && my > 250 && my < 300) { player.money += player.wood * 5; player.wood = 0; }
-    if (gameState === "GAME" && inventory[selectedSlot].id === 'blueprint' && !showShop) {
+
+    if (showShop) {
+        if (mx > 200 && mx < 400) {
+            if (my > 250 && my < 300) { player.money += player.wood * 5; player.wood = 0; } // Sell Wood
+            if (my > 320 && my < 370) { player.money += player.leaves * 2; player.leaves = 0; } // <--- NEW: SELL LEAVES
+        }
+        return; // Don't allow other actions while shop is open
+    }
+    
+    if (gameState === "GAME" && inventory[selectedSlot].id === 'blueprint') {
         if (player.wood >= 50) { houses.push({ x: mx + camera.x - 300, y: my + camera.y - 300 }); player.wood -= 50; }
     }
     if (gameState === "MENU") {
