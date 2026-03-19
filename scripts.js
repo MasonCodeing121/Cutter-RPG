@@ -6,17 +6,15 @@ canvas.height = 600;
 ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
-// Change "localhost:3000" to your Render/Railway URL when you go live!
-const socket = io("http://https://cutter-rpg-server.onrender.com/"); 
+// UPDATED: Using your actual live Render URL
+const socket = io("https://cutter-rpg-server.onrender.com"); 
 let remotePlayers = {}; 
 
-// Receive other players' data
 socket.on('update-players', (data) => {
     remotePlayers = data;
     if (socket.id) delete remotePlayers[socket.id]; 
 });
 
-// Sync tree chopping across the network
 socket.on('tree-chopped', (data) => {
     if (trees[data.index]) {
         trees[data.index].wood = data.newWood;
@@ -49,7 +47,7 @@ const assetPaths = {
     house: "images/house.png",
     shovel: "images/shovel.png",
     questGiver: "images/questGiver1.png",
-    slime: "images/slime.png"
+    slime: "images/slime.png" // UPDATED: Correct filename
 };
 
 const questList = [
@@ -60,37 +58,25 @@ const questList = [
 // --- 3. VARIABLES & CONSTANTS ---
 let gameState = "MENU"; 
 let gameFrame = 0;
-let currentRoom = "forest"; 
 let showShopGUI = false;
 let dialogueText = "";
 const stagger = 8;
 const animations = { "down": 0, "left": 1, "right": 2, "up": 3 };
 
 let player = {
-    w: 64, h: 64,
-    direction: "down",
-    isMoving: false,
-    speed: 6,
-    hp: 100,
-    maxHp: 100,
-    wood: 0,
-    money: 0,
-    axeLevel: 1,
-    isSwinging: false,
-    swingTimer: 0,
-    hasStumpRemover: false
+    direction: "down", isMoving: false, speed: 6,
+    hp: 100, maxHp: 100, wood: 0, money: 0, axeLevel: 1,
+    isSwinging: false, swingTimer: 0, hasStumpRemover: false
 };
 
 let camera = { x: 0, y: 0 };
-let trees = [];
-let mobs = [];
-let houses = [];
+let trees = [], mobs = [];
 const keys = {};
 
 const shopBuilding = { x: 800, y: 800, w: 489, h: 272 };
 const npc = { x: 400, y: 1200, range: 120 };
 
-// Slime Sheet Constants (3 columns, 4 rows)
+// 3x4 Spritesheet logic for slime.png
 const SLIME_COLS = 3;
 const SLIME_ROWS = 4;
 
@@ -140,7 +126,7 @@ function drawShopGUI() {
 
     ctx.fillStyle = "white";
     ctx.textAlign = "center";
-    ctx.font = "20px Arial";
+    ctx.font = "24px Arial";
     ctx.fillText("WOODCUTTER SHOP", 300, 150);
 
     // EXIT BUTTON
@@ -152,8 +138,8 @@ function drawShopGUI() {
 
     ctx.textAlign = "left";
     ctx.fillText(`Gold: ${player.money}`, 130, 200);
-    ctx.fillText("1. Sharpen Axe (Cost: 50 Wood)", 130, 250);
-    ctx.fillText("2. Stump Remover (Cost: 100 Gold)", 130, 300);
+    ctx.fillText("1. Upgrade Axe (50 Wood)", 130, 250);
+    ctx.fillText("2. Stump Remover (100 Wood)", 130, 300);
 }
 
 function animate() {
@@ -161,7 +147,6 @@ function animate() {
 
     updateSlimes();
 
-    // Movement
     let mx = (keys['KeyD']?1:0) - (keys['KeyA']?1:0);
     let my = (keys['KeyS']?1:0) - (keys['KeyW']?1:0);
     player.isMoving = false;
@@ -174,7 +159,6 @@ function animate() {
 
     broadcastMovement();
 
-    // Draw Grass
     ctx.save();
     ctx.translate(-camera.x + 300, -camera.y + 300);
     if (grassPattern) {
@@ -183,56 +167,45 @@ function animate() {
     }
     ctx.restore();
 
-    // Depth Sorting
-    let drawList = trees.map((t, i) => ({ ...t, type: t.wood > 0 ? 'tree' : 'stump', index: i }));
-    drawList.push({ x: camera.x, y: camera.y, type: 'player', dir: player.direction, moving: player.isMoving });
-    drawList.push({ x: npc.x, y: npc.y, type: 'npc' });
-    mobs.forEach(m => drawList.push({ ...m, type: 'slime' }));
-    for (let id in remotePlayers) drawList.push({ ...remotePlayers[id], type: 'remote' });
+    let drawList = trees.map((t, i) => ({ ...t, d: t.wood > 0 ? 't' : 's', index: i }));
+    drawList.push({ x: camera.x, y: camera.y, d: 'p', dir: player.direction, moving: player.isMoving });
+    drawList.push({ x: npc.x, y: npc.y, d: 'n' });
+    mobs.forEach(m => drawList.push({ ...m, d: 'm' }));
+    for (let id in remotePlayers) drawList.push({ ...remotePlayers[id], d: 'other' });
 
     drawList.sort((a, b) => a.y - b.y);
 
     drawList.forEach(obj => {
         let sx = obj.x - camera.x + 300, sy = obj.y - camera.y + 300;
-        if (obj.type === 'tree') ctx.drawImage(images.tree, sx - 80, sy - 160, 160, 180);
-        else if (obj.type === 'stump') ctx.drawImage(images.stump, sx - 40, sy - 40, 80, 80);
-        else if (obj.type === 'npc') ctx.drawImage(images.questGiver, sx - 32, sy - 32, 64, 64);
-        else if (obj.type === 'slime') {
+        if (obj.d === 't') ctx.drawImage(images.tree, sx - 80, sy - 160, 160, 180);
+        else if (obj.d === 's') ctx.drawImage(images.stump, sx - 40, sy - 40, 80, 80);
+        else if (obj.d === 'n') ctx.drawImage(images.questGiver, sx - 32, sy - 32, 64, 64);
+        else if (obj.d === 'm') {
             let sw = images.slime.width / SLIME_COLS, sh = images.slime.height / SLIME_ROWS;
             ctx.drawImage(images.slime, (obj.frame % SLIME_COLS) * sw, Math.floor(obj.frame / SLIME_COLS) * sh, sw, sh, sx - 32, sy - 32, 64, 64);
         }
-        else if (obj.type === 'player' || obj.type === 'remote') {
+        else if (obj.d === 'p' || obj.d === 'other') {
             let grid = images.sprite.width / 4;
             let f = (obj.moving ? Math.floor(gameFrame / stagger) % 4 : 0);
             ctx.drawImage(images.sprite, f * grid, animations[obj.dir] * grid, grid, grid, sx - 32, sy - 32, 64, 64);
         }
     });
 
-    // UI Overlay
-    ctx.fillStyle = "white"; ctx.textAlign = "left"; ctx.font = "18px Arial";
+    ctx.fillStyle = "white"; ctx.font = "18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`Wood: ${player.wood} | Gold: ${player.money}`, 20, 30);
-    if (dialogueText) {
-        ctx.fillStyle = "black"; ctx.fillRect(50, 450, 500, 100);
-        ctx.fillStyle = "white"; ctx.fillText(dialogueText, 70, 500);
-    }
 }
 
 // --- 6. INTERACTION & INPUT ---
 window.addEventListener('keydown', e => {
     keys[e.code] = true;
     if (e.code === "Space" && gameState === "GAME") {
-        // Chopping Logic with Multiplayer Sync
         trees.forEach((t, i) => {
             if (t.wood > 0 && Math.hypot(camera.x - t.x, camera.y - t.y) < 100) {
                 t.wood -= player.axeLevel;
-                socket.emit('chop-tree', { index: i, newWood: t.wood }); // Tell others!
+                socket.emit('chop-tree', { index: i, newWood: t.wood }); 
                 if (t.wood <= 0) player.wood += 5;
             }
         });
-        // NPC Interaction
-        if (Math.hypot(camera.x - npc.x, camera.y - npc.y) < 120) {
-            dialogueText = questList[0].text;
-        }
     }
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
@@ -247,9 +220,7 @@ canvas.addEventListener('mousedown', e => {
 
     if (gameState === "MENU") {
         if (my > 250 && my < 300) { initTrees(Date.now()); gameState = "GAME"; }
-        if (my > 390 && my < 440) gameState = "MULTI_MENU";
-    } else if (gameState === "MULTI_MENU") {
-        if (my > 200 && my < 250) {
+        if (my > 390 && my < 440) {
             const room = prompt("Room Name:");
             if (room) { socket.emit('join-room', room); initTrees(12345); gameState = "GAME"; }
         }
@@ -260,8 +231,7 @@ canvas.addEventListener('mousedown', e => {
 
 // --- 7. STARTUP ---
 const images = {};
-let grassPattern;
-let loaded = 0;
+let grassPattern, loaded = 0;
 for (let k in assetPaths) {
     images[k] = new Image();
     images[k].src = assetPaths[k];
@@ -272,8 +242,9 @@ for (let k in assetPaths) {
                 ctx.clearRect(0,0,600,600);
                 if (gameState === "GAME") animate();
                 else {
-                    ctx.fillStyle = "white"; ctx.textAlign = "center";
-                    ctx.fillText(gameState === "MENU" ? "START NEW WORLD" : "JOIN ONLINE ROOM", 300, 300);
+                    ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = "30px Arial";
+                    ctx.fillText("NEW GAME", 300, 280);
+                    ctx.fillText("MULTIPLAYER", 300, 420);
                 }
                 gameFrame++; requestAnimationFrame(main);
             }
