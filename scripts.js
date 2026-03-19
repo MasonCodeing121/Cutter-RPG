@@ -7,7 +7,7 @@ ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
 // Change "localhost:3000" to your Render/Railway URL when you go live!
-const socket = io("http://localhost:3000"); 
+const socket = io("http://https://cutter-rpg-server.onrender.com/"); 
 let remotePlayers = {}; 
 
 // Receive other players' data
