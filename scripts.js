@@ -5,7 +5,7 @@ canvas.width = 600; canvas.height = 600;
 ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
-const socket = io("https://mason-server.onrender.com", { transports: ['websocket', 'polling'] });
+const socket = io("https://server-5jkd.onrender.com", { transports: ['websocket', 'polling'] });
 let remotePlayers = {}; 
 let isOnline = false;
 let lastTime = 0;
