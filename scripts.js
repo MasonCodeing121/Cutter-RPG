@@ -5,15 +5,34 @@ canvas.width = 600; canvas.height = 600;
 ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
-const socket = io("https://server-5jkd.onrender.com", { transports: ['websocket', 'polling'] });
+// URL updated to your Render server
+const socket = io("https://mason-server.onrender.com", { transports: ['websocket', 'polling'] });
 let remotePlayers = {}; 
 let isOnline = false;
 let lastTime = 0;
+let currentRoomId = null;
 
-socket.on('connect', () => { isOnline = true; });
-socket.on('update-players', (data) => {
-    remotePlayers = data;
-    if (socket.id) delete remotePlayers[socket.id];
+socket.on('connect', () => { 
+    isOnline = true;
+    console.log('Connected to server:', socket.id);
+});
+
+socket.on('room:joined', (data) => {
+    currentRoomId = data.room.id;
+    console.log('Joined room:', currentRoomId);
+});
+
+socket.on('game:event', (data) => {
+    // Receive other players' data
+    if (data.senderId !== socket.id && data.payload) {
+        remotePlayers[data.senderId] = data.payload;
+    }
+});
+
+socket.on('room:player_left', (data) => {
+    if (data.player) {
+        delete remotePlayers[data.player.id];
+    }
 });
 
 // --- 2. ASSETS ---
@@ -37,7 +56,6 @@ const animations = { "down": 0, "left": 1, "right": 2, "up": 3 };
 
 let inventory = [{id: 'axe'}, {id: 'log'}, {id: 'leaves'}, {id: 'slime_gel'}];
 let selectedSlot = 0;
-let marker = null; 
 
 let localWorlds = JSON.parse(localStorage.getItem('rpg_worlds') || '[]');
 let serverList = JSON.parse(localStorage.getItem('rpg_servers') || '[]');
@@ -98,7 +116,6 @@ function animate(currentTime) {
 
     if (gameState === "GAME") {
         if (!showShop) {
-            // Player Movement
             let mx = (keys['KeyD']||keys['ArrowRight']?1:0) - (keys['KeyA']||keys['ArrowLeft']?1:0);
             let my = (keys['KeyS']||keys['ArrowDown']?1:0) - (keys['KeyW']||keys['ArrowUp']?1:0);
 
@@ -118,8 +135,7 @@ function animate(currentTime) {
             // Mob AI
             mobs.forEach(m => {
                 let distToPlayer = Math.hypot(camera.x - m.x, camera.y - m.y);
-                if (distToPlayer < 250) { m.state = 'CHASE'; } else { m.state = 'WANDER'; }
-
+                if (distToPlayer < 250) m.state = 'CHASE'; else m.state = 'WANDER';
                 let speed = (m.state === 'CHASE' ? 120 : 40) * dt;
                 let tx = (m.state === 'CHASE' ? camera.x : m.targetX);
                 let ty = (m.state === 'CHASE' ? camera.y : m.targetY);
@@ -127,25 +143,27 @@ function animate(currentTime) {
                 if (Math.hypot(tx - m.x, ty - m.y) > 5) {
                     let angle = Math.atan2(ty - m.y, tx - m.x);
                     m.x += Math.cos(angle) * speed; m.y += Math.sin(angle) * speed;
-                    if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
-                        m.dir = Math.cos(angle) > 0 ? 'right' : 'left';
-                    } else {
-                        m.dir = Math.sin(angle) > 0 ? 'down' : 'up';
-                    }
+                    m.dir = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle)) ? (Math.cos(angle) > 0 ? 'right' : 'left') : (Math.sin(angle) > 0 ? 'down' : 'up');
                 } else if (m.state === 'WANDER') {
                     m.targetX = m.x + (Math.random() - 0.5) * 200;
                     m.targetY = m.y + (Math.random() - 0.5) * 200;
                 }
-
-                // Mob Deal Damage
                 if (distToPlayer < 40 && player.invuln <= 0) {
                     player.hp -= 10; player.invuln = 1.0;
                     if (player.hp <= 0) { camera.x = 0; camera.y = 0; player.hp = 100; }
                 }
             });
 
-            if (isOnline && gameFrame % 3 === 0) {
-                socket.emit('move', { x: camera.x, y: camera.y, dir: player.direction, moving: player.isMoving, swinging: player.isSwinging, hp: player.hp });
+            // BROADCAST DATA TO SERVER
+            if (isOnline && currentRoomId && gameFrame % 3 === 0) {
+                socket.emit('game:event', { 
+                    roomId: currentRoomId,
+                    payload: { 
+                        x: camera.x, y: camera.y, 
+                        dir: player.direction, moving: player.isMoving, 
+                        swinging: player.isSwinging, hp: player.hp 
+                    }
+                });
             }
         }
 
@@ -155,18 +173,17 @@ function animate(currentTime) {
 
         if (grassPattern) { ctx.fillStyle = grassPattern; ctx.fillRect(camera.x - 2500, camera.y - 2500, 5000, 5000); }
         ctx.drawImage(images.shop, shopBounds.x, shopBounds.y, shopBounds.w, shopBounds.h);
-
+        
         let drawList = [];
         trees.forEach(t => { 
-            if(t.wood <= 0) { t.respawn += dt; if(t.respawn > 15) { t.wood = 5; t.respawn = 0; t.shake = 0; } }
+            if(t.wood <= 0) { t.respawn += dt; if(t.respawn > 15) { t.wood = 5; t.respawn = 0; } }
             drawList.push({...t, type: t.wood > 0 ? 'tree' : 'stump'}); 
         });
         bushes.forEach(b => { 
-            if(b.health <= 0) { b.respawn += dt; if(b.respawn > 12) { b.health = 3; b.respawn = 0; b.shake = 0; } }
+            if(b.health <= 0) { b.respawn += dt; if(b.respawn > 12) { b.health = 3; b.respawn = 0; } }
             drawList.push({...b, type: 'bush'}); 
         });
         mobs.forEach(m => drawList.push({...m, type: 'slime_mob'}));
-        houses.forEach(h => drawList.push({ ...h, type: 'built_house' }));
         for (let id in remotePlayers) drawList.push({ ...remotePlayers[id], type: 'other' });
         drawList.push({ x: camera.x, y: camera.y, type: 'player' });
         drawList.sort((a, b) => a.y - b.y);
@@ -186,7 +203,6 @@ function animate(currentTime) {
                 let f = Math.floor(gameFrame / 10) % 4;
                 ctx.drawImage(images.slime, f * grid, animations[obj.dir] * grid, grid, grid, obj.x - 32 + sX, obj.y - 32, 64, 64);
             }
-            else if (obj.type === 'built_house') ctx.drawImage(images.house, obj.x - 100, obj.y - 140, 200, 200);
             else if (obj.type === 'player' || obj.type === 'other') {
                 let grid = images.sprite.width / 4;
                 let isM = (obj.type === 'player') ? player.isMoving : obj.moving;
@@ -203,36 +219,25 @@ function animate(currentTime) {
         });
         ctx.restore();
 
-        // --- UI ---
-        // HP BAR
+        // UI
         ctx.fillStyle = "black"; ctx.fillRect(20, 20, 200, 20);
         ctx.fillStyle = "red"; ctx.fillRect(20, 20, (player.hp / player.maxHp) * 200, 20);
         ctx.strokeStyle = "white"; ctx.strokeRect(20, 20, 200, 20);
 
-        // MINIMAP
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(470, 10, 120, 120);
-        trees.forEach(t => { if(t.wood > 0) { ctx.fillStyle = "#5d4037"; ctx.fillRect(470 + 60 + (t.x/40), 10 + 60 + (t.y/40), 2, 2); } });
-        mobs.forEach(m => { ctx.fillStyle = "blue"; ctx.fillRect(470 + 60 + (m.x/40), 10 + 60 + (m.y/40), 2, 2); });
-        ctx.fillStyle = "lime"; ctx.fillRect(470 + 60 + (camera.x/40), 10 + 60 + (camera.y/40), 5, 5);
-
         if (showShop) {
             ctx.fillStyle = "rgba(0,0,0,0.9)"; ctx.fillRect(100, 100, 400, 400);
-            ctx.fillStyle = "white"; ctx.textAlign="center"; ctx.fillText("SHOP", 300, 150);
             drawButton(200, 200, 200, 40, "SELL WOOD (+$5)");
             drawButton(200, 260, 200, 40, "SELL LEAVES (+$2)");
             drawButton(200, 320, 200, 40, "SELL GEL (+$10)");
-            ctx.fillText(`$${player.money}`, 300, 420);
         }
 
         // Inventory
         for (let i = 0; i < 4; i++) {
             ctx.fillStyle = (selectedSlot === i) ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.6)";
-            ctx.fillRect(190 + i * 55, 530, 50, 50); ctx.strokeRect(190 + i * 55, 530, 50, 50);
+            ctx.fillRect(190 + i * 55, 530, 50, 50);
             let itm = inventory[i];
             if (itm.id === 'axe') ctx.drawImage(images.axe, 200 + i * 55, 540, 30, 30);
             if (itm.id === 'log') { ctx.drawImage(images.log, 200 + i * 55, 540, 30, 30); ctx.fillStyle="white"; ctx.fillText(player.wood, 230 + i * 55, 575); }
-            if (itm.id === 'leaves') { ctx.drawImage(images.leaves, 200 + i * 55, 540, 30, 30); ctx.fillStyle="white"; ctx.fillText(player.leaves, 230 + i * 55, 575); }
-            if (itm.id === 'slime_gel') { ctx.drawImage(images.gel, 200 + i * 55, 540, 30, 30); ctx.fillStyle="white"; ctx.fillText(player.gel, 230 + i * 55, 575); }
         }
     }
     gameFrame++;
@@ -247,23 +252,12 @@ window.addEventListener('keydown', e => {
         else if (e.key.length === 1) typingName += e.key;
         return;
     }
-    if (e.code === "KeyE" && gameState === "GAME") {
-        if (Math.hypot(camera.x - (shopBounds.x + 125), camera.y - (shopBounds.y + 75)) < 180) showShop = !showShop;
-    }
     keys[e.code] = true;
     if (["1","2","3","4"].includes(e.key)) selectedSlot = parseInt(e.key) - 1;
-
-    if (e.code === "Space" && gameState === "GAME" && !player.isSwinging && !showShop) {
+    if (e.code === "Space" && gameState === "GAME" && !player.isSwinging) {
         if (inventory[selectedSlot].id === 'axe') {
             player.isSwinging = true; player.swingTimer = 10;
             trees.forEach(t => { if (t.wood > 0 && Math.hypot(camera.x - t.x, camera.y - t.y) < 110) { t.wood--; t.shake = 10; if (t.wood <= 0) player.wood += 5; } });
-            bushes.forEach(b => { if (b.health > 0 && Math.hypot(camera.x - b.x, camera.y - b.y) < 80) { b.health--; b.shake = 10; if (b.health <= 0) player.leaves += 3; } });
-            mobs.forEach((m, index) => { 
-                if (Math.hypot(camera.x - m.x, camera.y - m.y) < 100) { 
-                    m.hp--; m.shake = 10; 
-                    if (m.hp <= 0) { player.gel++; mobs.splice(index, 1); }
-                } 
-            });
         }
     }
 });
@@ -273,33 +267,28 @@ canvas.addEventListener('mousedown', e => {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
 
-    if (showShop) {
-        if (mx > 200 && mx < 400) {
-            if (my > 200 && my < 240) { player.money += player.wood * 5; player.wood = 0; }
-            if (my > 260 && my < 300) { player.money += player.leaves * 2; player.leaves = 0; }
-            if (my > 320 && my < 360) { player.money += player.gel * 10; player.gel = 0; }
-        }
-        return;
-    }
-
     if (gameState === "MENU") {
         if (mx > 150 && mx < 450) {
             if (my > 250 && my < 300) { typingName = ""; gameState = "CREATE"; }
-            if (my > 320 && my < 370) gameState = "LOAD_LIST";
             if (my > 390 && my < 440) gameState = "MULTI_LIST";
         }
     } 
-    else if (gameState === "LOAD_LIST") {
-        localWorlds.forEach((w, i) => { if (my > 100 + i*60 && my < 150 + i*60) { initWorld(w.seed); gameState = "GAME"; animate(performance.now()); }});
-        if (my > 520) gameState = "MENU";
-    }
     else if (gameState === "MULTI_LIST") {
-        serverList.forEach((s, i) => { if (my > 100 + i*60 && my < 150 + i*60) { if(isOnline) socket.emit('join-room', s); initWorld(12345); gameState = "GAME"; animate(performance.now()); }});
+        serverList.forEach((s, i) => { 
+            if (my > 100 + i*60 && my < 150 + i*60) { 
+                if(isOnline) socket.emit('room:join', { roomId: s, playerName: 'Player' }); 
+                initWorld(12345); gameState = "GAME"; animate(performance.now()); 
+            }
+        });
         if (my > 400 && my < 450) {
             let n = prompt("Server Name:"); 
-            if(n) { serverList.push(n); localStorage.setItem('rpg_servers', JSON.stringify(serverList)); if(isOnline) socket.emit('join-room', n); initWorld(12345); gameState = "GAME"; animate(performance.now()); }
+            if(n) { 
+                serverList.push(n); 
+                localStorage.setItem('rpg_servers', JSON.stringify(serverList)); 
+                if(isOnline) socket.emit('room:join', { roomId: n, playerName: 'Player' });
+                initWorld(12345); gameState = "GAME"; animate(performance.now()); 
+            }
         }
-        if (my > 520) gameState = "MENU";
     }
 });
 
@@ -314,19 +303,10 @@ for (let k in assetPaths) {
                 if (gameState === "GAME") return;
                 ctx.clearRect(0,0,600,600);
                 if (images.background) ctx.drawImage(images.background, 0,0,600,600);
-                if (gameState === "MENU") {
-                    drawButton(150, 250, 300, 50, "NEW WORLD");
-                    drawButton(150, 320, 300, 50, "LOAD WORLD");
-                    drawButton(150, 390, 300, 50, "MULTIPLAYER");
-                } else if (gameState === "LOAD_LIST") {
-                    localWorlds.forEach((w, i) => drawButton(150, 100 + i*60, 300, 50, w.name));
-                    drawButton(150, 520, 300, 40, "BACK", "gray");
-                } else if (gameState === "MULTI_LIST") {
+                if (gameState === "MENU") drawButton(150, 250, 300, 50, "NEW WORLD");
+                else if (gameState === "MULTI_LIST") {
                     serverList.forEach((s, i) => drawButton(150, 100 + i*60, 300, 50, s));
                     drawButton(150, 400, 300, 50, "+ CREATE SERVER", "#27ae60");
-                    drawButton(150, 520, 300, 40, "BACK", "gray");
-                } else if (gameState === "CREATE") {
-                    ctx.fillStyle="white"; ctx.textAlign="center"; ctx.fillText("WORLD NAME: " + typingName + "_", 300, 300);
                 }
                 requestAnimationFrame(loop);
             }
