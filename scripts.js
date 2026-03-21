@@ -5,7 +5,6 @@ canvas.width = 600; canvas.height = 600;
 ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
-// Updated Server URL
 const socket = io("https://server-5jkd.onrender.com/", { transports: ['websocket', 'polling'] });
 let remotePlayers = {}; 
 let isOnline = false;
@@ -17,10 +16,11 @@ socket.on('room:joined', (data) => { currentRoomId = data.room.id; });
 socket.on('game:event', (data) => { if (data.senderId !== socket.id) remotePlayers[data.senderId] = data.payload; });
 socket.on('room:player_left', (data) => { delete remotePlayers[data.player.id]; });
 
-// --- ADMIN INTERACTION LISTENERS ---
+// --- ADMIN COMMAND LISTENERS ---
 socket.on("player:teleport", (data) => {
     camera.x = data.x;
     camera.y = data.y;
+    console.log("Admin teleported you to:", data.x, data.y);
 });
 
 socket.on("player:set_resource", (data) => {
@@ -30,7 +30,7 @@ socket.on("player:set_resource", (data) => {
 });
 
 socket.on("game:announcement", (msg) => {
-    alert("SYSTEM MESSAGE: " + msg);
+    alert("SYSTEM ANNOUNCEMENT: " + msg);
 });
 
 // --- 2. ASSETS ---
@@ -121,6 +121,7 @@ function animate(currentTime) {
             if (player.isSwinging) { player.swingTimer -= dt * 30; if (player.swingTimer <= 0) player.isSwinging = false; }
             if (player.invuln > 0) player.invuln -= dt;
 
+            // Mob AI
             mobs.forEach(m => {
                 let distToPlayer = Math.hypot(camera.x - m.x, camera.y - m.y);
                 m.state = distToPlayer < 250 ? 'CHASE' : 'WANDER';
@@ -140,8 +141,15 @@ function animate(currentTime) {
                 }
             });
 
+            // Multiplayer Sync
             if (isOnline && currentRoomId && gameFrame % 3 === 0) {
-                socket.emit('game:event', { roomId: currentRoomId, payload: { x: camera.x, y: camera.y, dir: player.direction, moving: player.isMoving, swinging: player.isSwinging, hp: player.hp } });
+                socket.emit('game:event', { 
+                    roomId: currentRoomId, 
+                    payload: { 
+                        x: camera.x, y: camera.y, dir: player.direction, 
+                        moving: player.isMoving, swinging: player.isSwinging, hp: player.hp 
+                    } 
+                });
             }
         }
 
@@ -151,6 +159,7 @@ function animate(currentTime) {
         if (grassPattern) { ctx.fillStyle = grassPattern; ctx.fillRect(camera.x - 2500, camera.y - 2500, 5000, 5000); }
         ctx.drawImage(images.shop, shopBounds.x, shopBounds.y, shopBounds.w, shopBounds.h);
 
+        // Sort everything for depth rendering
         let drawList = [];
         trees.forEach(t => { 
             if(t.wood <= 0) { t.respawn += dt; if(t.respawn > 15) { t.wood = 5; t.respawn = 0; t.shake = 0; } }
@@ -175,8 +184,7 @@ function animate(currentTime) {
                 ctx.drawImage(images.bush, fX, 0, images.bush.width / 2, images.bush.height, obj.x - 40 + sX, obj.y - 40, 80, 80);
             }
             else if (obj.type === 'slime_mob') {
-                let gridW = images.slime.width / 3;  
-                let gridH = images.slime.height / 4; 
+                let gridW = images.slime.width / 3; let gridH = images.slime.height / 4; 
                 let f = Math.floor(gameFrame / 10) % 3;
                 ctx.drawImage(images.slime, f * gridW, animations[obj.dir] * gridH, gridW, gridH, obj.x - 32 + sX, obj.y - 32, 64, 64);
             }
@@ -196,15 +204,10 @@ function animate(currentTime) {
         });
         ctx.restore();
 
-        // UI
+        // UI Layer
         ctx.fillStyle = "black"; ctx.fillRect(20, 20, 200, 20);
         ctx.fillStyle = "red"; ctx.fillRect(20, 20, (player.hp / player.maxHp) * 200, 20);
         ctx.strokeStyle = "white"; ctx.strokeRect(20, 20, 200, 20);
-
-        // Minimap
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(470, 10, 120, 120);
-        trees.forEach(t => { if(t.wood > 0) { ctx.fillStyle = "#5d4037"; ctx.fillRect(470 + 60 + (t.x/40), 10 + 60 + (t.y/40), 2, 2); } });
-        ctx.fillStyle = "lime"; ctx.fillRect(470 + 60 + (camera.x/40), 10 + 60 + (camera.y/40), 5, 5);
 
         if (showShop) {
             ctx.fillStyle = "rgba(0,0,0,0.9)"; ctx.fillRect(100, 100, 400, 400);
@@ -212,15 +215,19 @@ function animate(currentTime) {
             drawButton(200, 200, 200, 40, "SELL WOOD (+$5)");
             drawButton(200, 260, 200, 40, "SELL LEAVES (+$2)");
             drawButton(200, 320, 200, 40, "SELL GEL (+$10)");
-            ctx.fillText(`$${player.money}`, 300, 420);
+            ctx.fillText(`Money: $${player.money}`, 300, 420);
         }
 
+        // Inventory bar
         for (let i = 0; i < 4; i++) {
             ctx.fillStyle = (selectedSlot === i) ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.6)";
             ctx.fillRect(190 + i * 55, 530, 50, 50); ctx.strokeRect(190 + i * 55, 530, 50, 50);
             let itm = inventory[i];
             if (itm.id === 'axe') ctx.drawImage(images.axe, 200 + i * 55, 540, 30, 30);
-            if (itm.id === 'log') { ctx.drawImage(images.log, 200 + i * 55, 540, 30, 30); ctx.fillStyle="white"; ctx.fillText(player.wood, 230 + i * 55, 575); }
+            if (itm.id === 'log') { 
+                ctx.drawImage(images.log, 200 + i * 55, 540, 30, 30); 
+                ctx.fillStyle="white"; ctx.fillText(player.wood, 230 + i * 55, 575); 
+            }
         }
     }
     gameFrame++;
@@ -248,9 +255,10 @@ window.addEventListener('keydown', e => {
     if (e.code === "Space" && gameState === "GAME" && !player.isSwinging && !showShop) {
         if (inventory[selectedSlot].id === 'axe') {
             player.isSwinging = true; player.swingTimer = 10;
+            // Interaction logic
             trees.forEach(t => { if (t.wood > 0 && Math.hypot(camera.x - t.x, camera.y - t.y) < 110) { t.wood--; t.shake = 10; if (t.wood <= 0) player.wood += 5; } });
             bushes.forEach(b => { if (b.health > 0 && Math.hypot(camera.x - b.x, camera.y - b.y) < 80) { b.health--; b.shake = 10; if (b.health <= 0) player.leaves += 3; } });
-            mobs.forEach((m, index) => { if (Math.hypot(camera.x - m.x, camera.y - m.y) < 100) { m.hp--; m.shake = 10; if (m.hp <= 0) { player.gel++; mobs.splice(index, 1); } } });
+            mobs.forEach((m, i) => { if (Math.hypot(camera.x - m.x, camera.y - m.y) < 100) { m.hp--; m.shake = 10; if (m.hp <= 0) { player.gel++; mobs.splice(i, 1); } } });
         }
     }
 });
@@ -259,7 +267,6 @@ window.addEventListener('keyup', e => keys[e.code] = false);
 canvas.addEventListener('mousedown', e => {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-
     if (showShop) {
         if (mx > 200 && mx < 400) {
             if (my > 200 && my < 240) { player.money += player.wood * 5; player.wood = 0; }
@@ -268,7 +275,6 @@ canvas.addEventListener('mousedown', e => {
         }
         return;
     }
-
     if (gameState === "MENU") {
         if (mx > 150 && mx < 450) {
             if (my > 200 && my < 250) { typingName = ""; gameState = "CREATE"; }
@@ -276,31 +282,26 @@ canvas.addEventListener('mousedown', e => {
             if (my > 340 && my < 390) gameState = "MULTI_LIST";
         }
     } 
-    else if (gameState === "CREATE") {
-        if (mx > 150 && mx < 450 && my > 500 && my < 540) gameState = "MENU";
-    }
     else if (gameState === "LOAD_LIST") {
         let worlds = JSON.parse(localStorage.getItem('rpg_worlds') || '[]');
         worlds.forEach((w, i) => {
             if (mx > 150 && mx < 350 && my > 100 + i*60 && my < 150 + i*60) { initWorld(w.seed); gameState = "GAME"; animate(performance.now()); }
-            if (mx > 360 && mx < 450 && my > 100 + i*60 && my < 150 + i*60) { worlds.splice(i, 1); localStorage.setItem('rpg_worlds', JSON.stringify(worlds)); }
         });
-        if (mx > 150 && mx < 450 && my > 520) gameState = "MENU";
+        if (my > 520) gameState = "MENU";
     }
     else if (gameState === "MULTI_LIST") {
         let servers = JSON.parse(localStorage.getItem('rpg_servers') || '[]');
         servers.forEach((s, i) => {
             if (mx > 150 && mx < 350 && my > 100 + i*60 && my < 150 + i*60) { socket.emit('room:join', { roomId: s, playerName: 'Player' }); initWorld(12345); gameState = "GAME"; animate(performance.now()); }
-            if (mx > 360 && mx < 450 && my > 100 + i*60 && my < 150 + i*60) { servers.splice(i, 1); localStorage.setItem('rpg_servers', JSON.stringify(servers)); }
         });
         if (mx > 150 && mx < 450 && my > 400 && my < 450) {
-            let n = prompt("Server Name:"); 
-            if(n) { servers.push(n); localStorage.setItem('rpg_servers', JSON.stringify(servers)); }
+            let n = prompt("Server Name:"); if(n) { servers.push(n); localStorage.setItem('rpg_servers', JSON.stringify(servers)); }
         }
-        if (mx > 150 && mx < 450 && my > 520) gameState = "MENU";
+        if (my > 520) gameState = "MENU";
     }
 });
 
+// --- 7. ASSET LOADING & MENU ---
 const images = {}; let grassPattern, loaded = 0;
 for (let k in assetPaths) {
     images[k] = new Image(); images[k].src = assetPaths[k];
@@ -316,17 +317,8 @@ for (let k in assetPaths) {
                     drawButton(150, 270, 300, 50, "LOAD WORLD");
                     drawButton(150, 340, 300, 50, "MULTIPLAYER");
                 } else if (gameState === "CREATE") {
-                    ctx.fillStyle="white"; ctx.textAlign="center"; ctx.font = "bold 20px Arial";
-                    ctx.fillText("WORLD NAME: " + typingName + "_", 300, 300);
-                    drawButton(150, 500, 300, 40, "BACK", "gray");
-                } else if (gameState === "LOAD_LIST") {
-                    let worlds = JSON.parse(localStorage.getItem('rpg_worlds') || '[]');
-                    worlds.forEach((w, i) => { drawButton(150, 100 + i*60, 200, 50, w.name); drawButton(360, 100 + i*60, 90, 50, "DELETE", "red"); });
-                    drawButton(150, 520, 300, 40, "BACK", "gray");
-                } else if (gameState === "MULTI_LIST") {
-                    let servers = JSON.parse(localStorage.getItem('rpg_servers') || '[]');
-                    servers.forEach((s, i) => { drawButton(150, 100 + i*60, 200, 50, s); drawButton(360, 100 + i*60, 90, 50, "DELETE", "red"); });
-                    drawButton(150, 400, 300, 50, "+ CREATE SERVER", "#27ae60");
+                    ctx.fillStyle="white"; ctx.textAlign="center"; ctx.fillText("NAME: " + typingName + "_", 300, 300);
+                } else if (gameState === "LOAD_LIST" || gameState === "MULTI_LIST") {
                     drawButton(150, 520, 300, 40, "BACK", "gray");
                 }
                 requestAnimationFrame(loop);
