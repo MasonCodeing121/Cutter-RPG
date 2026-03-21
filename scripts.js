@@ -9,44 +9,19 @@ document.body.appendChild(canvas);
 const socket = io("https://server-5jkd.onrender.com/", { transports: ['websocket', 'polling'] });
 let remotePlayers = {};
 let isOnline = false;
-let lastTime = 0;
 let currentRoomId = null;
+let playerName = "Player";
 
 socket.on('connect', () => { isOnline = true; });
-socket.on('room:joined', (data) => { 
-    currentRoomId = data.room.id; 
-    loadPlayerData(); 
+socket.on('room:joined', (data) => { currentRoomId = data.room.id; });
+socket.on('game:event', (data) => {
+    if (data.senderId !== socket.id) remotePlayers[data.senderId] = data.payload;
 });
-socket.on('game:event', (data) => { if (data.senderId !== socket.id) remotePlayers[data.senderId] = data.payload; });
 socket.on('room:player_left', (data) => { delete remotePlayers[data.player.id]; });
 
-// Admin Panel Listeners
-socket.on("player:teleport", (data) => { camera.x = data.x; camera.y = data.y; savePlayerData(); });
-socket.on("player:set_resource", (data) => {
-    if (player.hasOwnProperty(data.type)) {
-        player[data.type] = data.amount;
-        if (data.type === 'wood') player.totalWood = Math.max(player.totalWood, data.amount);
-        savePlayerData();
-    }
-});
-socket.on("game:announcement", (msg) => { alert("SERVER MESSAGE: " + msg); });
-// Listen for Admin overrides (Resources & Position)
-socket.on("player:set_resource", (data) => {
-    const { type, amount } = data;
-
-    // 1. Handle Resources
-    if (type === "wood") player.wood = amount;
-    if (type === "money") player.money = amount;
-    if (type === "hp") player.hp = amount;
-
-    // 2. Handle Teleportation (Position)
-    if (type === "x") player.x = amount;
-    if (type === "y") player.y = amount;
-
-    // 3. Update the UI locally so the player sees the change immediately
-    updatePlayerUI(); 
-    
-    console.log(`Admin set ${type} to ${amount}`);
+socket.on('player:teleport', (data) => {
+    camera.x = data.x;
+    camera.y = data.y;
 });
 
 socket.on('player:set_resource', (data) => {
