@@ -6,7 +6,7 @@ ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
 const socket = io("https://server-5jkd.onrender.com/", { transports: ['websocket', 'polling'] });
-let remotePlayers = {};
+let remotePlayers = {}; 
 let isOnline = false;
 let lastTime = 0;
 let currentRoomId = null;
@@ -15,6 +15,22 @@ socket.on('connect', () => { isOnline = true; });
 socket.on('room:joined', (data) => { currentRoomId = data.room.id; });
 socket.on('game:event', (data) => { if (data.senderId !== socket.id) remotePlayers[data.senderId] = data.payload; });
 socket.on('room:player_left', (data) => { delete remotePlayers[data.player.id]; });
+
+// --- NEW ADMIN RECEIVERS ---
+socket.on("player:teleport", (data) => {
+    camera.x = data.x;
+    camera.y = data.y;
+});
+
+socket.on("player:set_resource", (data) => {
+    if (data.type === 'wood') player.wood = data.amount;
+    if (data.type === 'money') player.money = data.amount;
+    if (data.type === 'hp') player.hp = data.amount;
+});
+// ---------------------------
+
+// Rest of the file remains unchanged...
+// [The existing assetPaths, initWorld, and animate functions remain as they were]
 
 // --- 2. ASSETS ---
 const assetPaths = {
