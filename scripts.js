@@ -29,6 +29,24 @@ socket.on("player:set_resource", (data) => {
     }
 });
 socket.on("game:announcement", (msg) => { alert("SERVER MESSAGE: " + msg); });
+// Listen for Admin overrides (Resources & Position)
+socket.on("player:set_resource", (data) => {
+    const { type, amount } = data;
+
+    // 1. Handle Resources
+    if (type === "wood") player.wood = amount;
+    if (type === "money") player.money = amount;
+    if (type === "hp") player.hp = amount;
+
+    // 2. Handle Teleportation (Position)
+    if (type === "x") player.x = amount;
+    if (type === "y") player.y = amount;
+
+    // 3. Update the UI locally so the player sees the change immediately
+    updatePlayerUI(); 
+    
+    console.log(`Admin set ${type} to ${amount}`);
+});
 
 // --- 2. ASSETS ---
 const assetPaths = {
