@@ -68,6 +68,10 @@ let notifText  = null;
 let notifColor = "#ffffff";
 let notifTimer = 0;
 
+let worldTime = 0;
+let particles = [];
+let speedBoostTimer = 0;
+
 let camera = { x: 0, y: 0 };
 let trees = [], bushes = [], mobs = [], rocks = [], crystalNodes = [];
 
@@ -82,7 +86,8 @@ let player = {
     baseSpeed: 250, hp: 100, maxHp: 100,
     wood: 0, money: 0, leaves: 0, gel: 0, stone: 0, crystals: 0,
     totalWood: 0, totalLeaves: 0, totalGel: 0, totalStone: 0, totalCrystals: 0,
-    kills: 0, isSwinging: false, swingTimer: 0, invuln: 0
+    kills: 0, isSwinging: false, swingTimer: 0, invuln: 0,
+    xp: 0, level: 1, xpToNext: 100
 };
 
 let completedQuests = [];
@@ -128,7 +133,8 @@ function initWorld(seed) {
                 let r = rnd();
                 if      (r > 0.82)  trees.push({ x, y, wood: 5, shake: 0, respawn: 0 });
                 else if (r > 0.65)  bushes.push({ x, y, health: 3, shake: 0, respawn: 0 });
-                else if (r > 0.55)  spawnSlime(x, y);
+                else if (r > 0.56)  spawnSlime(x, y);
+                else if (r > 0.55)  spawnGoblin(x, y);
                 else if (r > 0.42)  rocks.push({ x, y, hp: 8, maxHp: 8, shake: 0, respawn: 0 });
                 else if (r > 0.415) crystalNodes.push({ x, y, hp: 15, maxHp: 15, shake: 0, respawn: 0 });
             }
@@ -137,7 +143,32 @@ function initWorld(seed) {
 }
 
 function spawnSlime(x, y) {
-    mobs.push({ x, y, hp: 3, type: 'slime', dir: 'down', targetX: x, targetY: y, state: 'WANDER', timer: 0, shake: 0 });
+    mobs.push({ x, y, hp: 3, maxHp: 3, type: 'slime', dir: 'down', targetX: x, targetY: y, state: 'WANDER', timer: 0, shake: 0 });
+}
+
+function spawnGoblin(x, y) {
+    mobs.push({ x, y, hp: 5, maxHp: 5, type: 'goblin', dir: 'down', targetX: x, targetY: y, state: 'WANDER', timer: 0, shake: 0 });
+}
+
+function gainXP(amount) {
+    player.xp += amount;
+    while (player.xp >= player.xpToNext) {
+        player.xp -= player.xpToNext;
+        player.level++;
+        player.xpToNext = player.level * 100;
+        player.maxHp += 10;
+        player.hp = Math.min(player.hp + 10, player.maxHp);
+        player.baseSpeed += 5;
+        showNotif("Level Up! Now Level " + player.level + "! (+10 HP, +5 Speed)", "#ffd54f", 5);
+    }
+}
+
+function spawnParticles(wx, wy, color, count) {
+    for (let i = 0; i < count; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let spd = 60 + Math.random() * 80;
+        particles.push({ wx, wy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, color, life: 1.0, size: 2 + Math.random() * 3 });
+    }
 }
 
 function checkCollision(nx, ny) {
@@ -304,18 +335,27 @@ function drawInventory() {
 }
 
 function drawShopUI() {
-    ctx.fillStyle = "rgba(0,0,0,0.9)"; ctx.fillRect(100, 100, 400, 400);
-    ctx.strokeStyle = "#3498db"; ctx.lineWidth = 2; ctx.strokeRect(100, 100, 400, 400);
+    ctx.fillStyle = "rgba(0,0,0,0.93)"; ctx.fillRect(80, 60, 440, 490);
+    ctx.strokeStyle = "#3498db"; ctx.lineWidth = 2; ctx.strokeRect(80, 60, 440, 490);
     ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = "bold 20px Arial";
-    ctx.fillText("SHOP", 300, 140);
-    drawButton(200, 170, 200, 40, "SELL WOOD (" + player.wood + "x $5)");
-    drawButton(200, 225, 200, 40, "SELL LEAVES (" + player.leaves + "x $2)");
-    drawButton(200, 280, 200, 40, "SELL GEL (" + player.gel + "x $10)");
-    drawButton(200, 335, 200, 40, "SELL STONE (" + player.stone + "x $3)");
-    drawButton(200, 390, 200, 40, "SELL CRYSTALS (" + player.crystals + "x $50)");
-    ctx.fillStyle = "#ffd54f"; ctx.font = "bold 18px Arial";
+    ctx.fillText("SHOP", 300, 92);
+
+    ctx.fillStyle = "#80deea"; ctx.font = "bold 13px Arial";
+    ctx.fillText("── BUY ──", 300, 118);
+    drawButton(95, 126, 195, 38, "HEALTH POTION ($50) +25HP", "#c62828");
+    drawButton(305, 126, 205, 38, "SPEED BOOST ($100) 20s", "#1565c0");
+
+    ctx.fillStyle = "#a5d6a7"; ctx.font = "bold 13px Arial";
+    ctx.fillText("── SELL ──", 300, 185);
+    drawButton(160, 193, 280, 38, "SELL WOOD (" + player.wood + "x $5)");
+    drawButton(160, 241, 280, 38, "SELL LEAVES (" + player.leaves + "x $2)");
+    drawButton(160, 289, 280, 38, "SELL GEL (" + player.gel + "x $10)");
+    drawButton(160, 337, 280, 38, "SELL STONE (" + player.stone + "x $3)");
+    drawButton(160, 385, 280, 38, "SELL CRYSTALS (" + player.crystals + "x $50)");
+
+    ctx.fillStyle = "#ffd54f"; ctx.font = "bold 18px Arial"; ctx.textAlign = "center";
     ctx.fillText("$" + player.money, 300, 460);
-    drawButton(350, 440, 120, 32, "CLOSE", "#c62828");
+    drawButton(340, 470, 160, 32, "CLOSE", "#c62828");
 }
 
 // ─── 9. MAIN GAME LOOP ───────────────────────────────────────────────────────
@@ -342,11 +382,28 @@ function animate(currentTime) {
             if (player.isSwinging) { player.swingTimer -= dt * 30; if (player.swingTimer <= 0) player.isSwinging = false; }
             if (player.invuln > 0) player.invuln -= dt;
             if (notifTimer > 0) notifTimer -= dt;
+            if (speedBoostTimer > 0) {
+                speedBoostTimer -= dt;
+                if (speedBoostTimer <= 0) { player.baseSpeed -= 80; speedBoostTimer = 0; }
+            }
+
+            worldTime = (worldTime + dt / 300) % 1;
+
+            particles = particles.filter(p => {
+                p.wx += p.vx * dt; p.wy += p.vy * dt;
+                p.vy += 80 * dt;
+                p.life -= dt * 2.0;
+                return p.life > 0;
+            });
 
             mobs.forEach(m => {
+                let isNight = worldTime > 0.25 && worldTime < 0.75;
+                let chaseRange  = m.type === 'goblin' ? 350 : (isNight ? 320 : 250);
+                let chaseSpeed  = m.type === 'goblin' ? 170 : 120;
+                let wanderSpeed = m.type === 'goblin' ? 55  : 40;
                 let distToPlayer = Math.hypot(camera.x - m.x, camera.y - m.y);
-                m.state = distToPlayer < 250 ? 'CHASE' : 'WANDER';
-                let speed = (m.state === 'CHASE' ? 120 : 40) * dt;
+                m.state = distToPlayer < chaseRange ? 'CHASE' : 'WANDER';
+                let speed = (m.state === 'CHASE' ? chaseSpeed : wanderSpeed) * dt;
                 let tx = m.state === 'CHASE' ? camera.x : m.targetX;
                 let ty = m.state === 'CHASE' ? camera.y : m.targetY;
                 if (Math.hypot(tx - m.x, ty - m.y) > 5) {
@@ -359,8 +416,9 @@ function animate(currentTime) {
                     m.targetX = m.x + (Math.random() - 0.5) * 200;
                     m.targetY = m.y + (Math.random() - 0.5) * 200;
                 }
+                let dmg = m.type === 'goblin' ? 15 : 10;
                 if (distToPlayer < 40 && player.invuln <= 0) {
-                    player.hp -= 10; player.invuln = 1.0;
+                    player.hp -= dmg; player.invuln = 1.0;
                     if (player.hp <= 0) { camera.x = 0; camera.y = 0; player.hp = player.maxHp; }
                 }
             });
@@ -434,6 +492,22 @@ function animate(currentTime) {
                 let gW = images.slime.width / 3, gH = images.slime.height / 4;
                 let f = Math.floor(gameFrame / 10) % 3;
                 ctx.drawImage(images.slime, f * gW, animations[obj.dir] * gH, gW, gH, obj.x - 32 + sX, obj.y - 32, 64, 64);
+                if (obj.hp < obj.maxHp) {
+                    ctx.fillStyle = "#333"; ctx.fillRect(obj.x - 20, obj.y - 40, 40, 5);
+                    ctx.fillStyle = "#e53935"; ctx.fillRect(obj.x - 20, obj.y - 40, (obj.hp / obj.maxHp) * 40, 5);
+                }
+            } else if (obj.type === 'goblin') {
+                ctx.save(); ctx.translate(obj.x + sX, obj.y);
+                ctx.fillStyle = "#2e7d32"; ctx.fillRect(-10, -6, 20, 20);
+                ctx.fillStyle = "#4caf50"; ctx.beginPath(); ctx.arc(0, -16, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = "#b71c1c"; ctx.fillRect(-5, -19, 3, 3); ctx.fillRect(2, -19, 3, 3);
+                ctx.fillStyle = "#1b5e20"; ctx.fillRect(-9, 14, 7, 9); ctx.fillRect(2, 14, 7, 9);
+                ctx.fillStyle = "#795548"; ctx.fillRect(-14, -8, 6, 12); ctx.fillRect(8, -8, 6, 12);
+                if (obj.hp < obj.maxHp) {
+                    ctx.fillStyle = "#333"; ctx.fillRect(-20, -34, 40, 5);
+                    ctx.fillStyle = "#e53935"; ctx.fillRect(-20, -34, (obj.hp / obj.maxHp) * 40, 5);
+                }
+                ctx.restore();
             } else if (obj.type === 'player' || obj.type === 'other') {
                 let grid = images.sprite.width / 4;
                 let isM = obj.type === 'player' ? player.isMoving : obj.moving;
@@ -462,7 +536,23 @@ function animate(currentTime) {
             }
         });
 
+        // Draw particles in world space
+        particles.forEach(p => {
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.wx - p.size / 2, p.wy - p.size / 2, p.size, p.size);
+        });
+        ctx.globalAlpha = 1;
+
         ctx.restore();
+
+        // Day/night overlay
+        let nightProgress = Math.sin(worldTime * Math.PI * 2);
+        let nightAlpha = Math.max(0, nightProgress * 0.65);
+        if (nightAlpha > 0) {
+            ctx.fillStyle = `rgba(5, 10, 60, ${nightAlpha})`;
+            ctx.fillRect(0, 0, 600, 600);
+        }
 
         // ── HUD ─────────────────────────────────────────────────────────────
         // HP bar
@@ -481,12 +571,33 @@ function animate(currentTime) {
         ctx.fillStyle = "#9e9e9e"; ctx.font = "10px Arial";
         ctx.fillText("  |  E = Inventory", 62, 55);
 
+        // XP bar
+        ctx.fillStyle = "#111"; ctx.fillRect(20, 63, 200, 10);
+        ctx.fillStyle = "#7c4dff";
+        ctx.fillRect(20, 63, (player.xp / player.xpToNext) * 200, 10);
+        ctx.strokeStyle = "#444"; ctx.lineWidth = 1; ctx.strokeRect(20, 63, 200, 10);
+        ctx.fillStyle = "#ce93d8"; ctx.font = "9px Arial"; ctx.textAlign = "left";
+        ctx.fillText("LV " + player.level + "   XP " + player.xp + " / " + player.xpToNext, 22, 71);
+
+        // Speed boost indicator
+        if (speedBoostTimer > 0) {
+            ctx.fillStyle = "#00bcd4"; ctx.font = "bold 11px Arial"; ctx.textAlign = "left";
+            ctx.fillText("SPEED BOOST " + Math.ceil(speedBoostTimer) + "s", 22, 86);
+        }
+
+        // Day/Night time indicator
+        let isNightHUD = worldTime > 0.25 && worldTime < 0.75;
+        ctx.fillStyle = isNightHUD ? "#90caf9" : "#ffd54f";
+        ctx.font = "11px Arial"; ctx.textAlign = "right";
+        ctx.fillText(isNightHUD ? "Night" : "Day", 590, 145);
+
         // Minimap
         ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(470, 10, 120, 120);
         ctx.strokeStyle = "#444"; ctx.lineWidth = 1; ctx.strokeRect(470, 10, 120, 120);
         trees.forEach(t => { if (t.wood > 0) { ctx.fillStyle = "#5d4037"; ctx.fillRect(470 + 60 + t.x / 40, 10 + 60 + t.y / 40, 2, 2); } });
         rocks.forEach(r => { if (r.hp > 0)   { ctx.fillStyle = "#9e9e9e"; ctx.fillRect(470 + 60 + r.x / 40, 10 + 60 + r.y / 40, 2, 2); } });
         crystalNodes.forEach(c => { if (c.hp > 0) { ctx.fillStyle = "#00e5ff"; ctx.fillRect(470 + 60 + c.x / 40, 10 + 60 + c.y / 40, 2, 2); } });
+        mobs.forEach(m => { ctx.fillStyle = m.type === 'goblin' ? "#4caf50" : "#ef5350"; ctx.fillRect(470 + 60 + m.x / 40, 10 + 60 + m.y / 40, 3, 3); });
         ctx.fillStyle = "#ce93d8"; ctx.fillRect(470 + 60 + questGiverPos.x / 40, 10 + 60 + questGiverPos.y / 40, 4, 4);
         ctx.fillStyle = "lime"; ctx.fillRect(470 + 60 + camera.x / 40, 10 + 60 + camera.y / 40, 5, 5);
 
@@ -581,27 +692,47 @@ window.addEventListener('keydown', e => {
             trees.forEach(t => {
                 if (t.wood > 0 && Math.hypot(camera.x - t.x, camera.y - t.y) < 110) {
                     t.wood--; t.shake = 10;
-                    if (t.wood <= 0) { player.wood += 5; player.totalWood += 5; }
+                    spawnParticles(t.x, t.y - 60, "#8d6e63", 6);
+                    if (t.wood <= 0) { player.wood += 5; player.totalWood += 5; gainXP(3); }
                 }
             });
             bushes.forEach(b => {
                 if (b.health > 0 && Math.hypot(camera.x - b.x, camera.y - b.y) < 80) {
                     b.health--; b.shake = 10;
-                    if (b.health <= 0) { player.leaves += 3; player.totalLeaves += 3; }
+                    spawnParticles(b.x, b.y - 30, "#66bb6a", 5);
+                    if (b.health <= 0) { player.leaves += 3; player.totalLeaves += 3; gainXP(2); }
                 }
             });
             mobs.forEach((m, idx) => {
                 if (Math.hypot(camera.x - m.x, camera.y - m.y) < 100) {
                     m.hp--; m.shake = 10;
-                    if (m.hp <= 0) { player.gel++; player.totalGel++; player.kills++; mobs.splice(idx, 1); }
+                    if (m.hp <= 0) {
+                        if (m.type === 'goblin') {
+                            let stoneAmt = 2 + Math.floor(Math.random() * 3);
+                            player.stone += stoneAmt; player.totalStone += stoneAmt;
+                            spawnParticles(m.x, m.y, "#4caf50", 10);
+                            gainXP(35);
+                        } else {
+                            player.gel++; player.totalGel++;
+                            spawnParticles(m.x, m.y, "#4dd0e1", 8);
+                            gainXP(20);
+                        }
+                        player.kills++;
+                        mobs.splice(idx, 1);
+                    } else {
+                        let hitColor = m.type === 'goblin' ? "#4caf50" : "#4dd0e1";
+                        spawnParticles(m.x, m.y - 20, hitColor, 4);
+                    }
                 }
             });
             rocks.forEach(r => {
                 if (r.hp > 0 && Math.hypot(camera.x - r.x, camera.y - r.y) < 110) {
                     r.hp--; r.shake = 10;
+                    spawnParticles(r.x, r.y, "#9e9e9e", 6);
                     if (r.hp <= 0) {
                         let amt = 2 + Math.floor(Math.random() * 4);
                         player.stone += amt; player.totalStone += amt;
+                        gainXP(2);
                         if (Math.random() < 0.18) { player.crystals++; player.totalCrystals++; }
                     }
                 }
@@ -609,9 +740,11 @@ window.addEventListener('keydown', e => {
             crystalNodes.forEach(c => {
                 if (c.hp > 0 && Math.hypot(camera.x - c.x, camera.y - c.y) < 110) {
                     c.hp--; c.shake = 10;
+                    spawnParticles(c.x, c.y - 20, "#00e5ff", 7);
                     if (c.hp <= 0) {
                         let amt = 1 + Math.floor(Math.random() * 2);
                         player.crystals += amt; player.totalCrystals += amt;
+                        gainXP(10);
                     }
                 }
             });
@@ -649,14 +782,26 @@ canvas.addEventListener('mousedown', e => {
     }
 
     if (showShop) {
-        if (mx > 200 && mx < 400) {
-            if (my > 170 && my < 210) { player.money += player.wood     * 5;  player.wood     = 0; }
-            if (my > 225 && my < 265) { player.money += player.leaves   * 2;  player.leaves   = 0; }
-            if (my > 280 && my < 320) { player.money += player.gel      * 10; player.gel      = 0; }
-            if (my > 335 && my < 375) { player.money += player.stone    * 3;  player.stone    = 0; }
-            if (my > 390 && my < 430) { player.money += player.crystals * 50; player.crystals = 0; }
+        // BUY - Health Potion
+        if (mx > 95 && mx < 290 && my > 126 && my < 164) {
+            if (player.money >= 50) { player.money -= 50; player.hp = Math.min(player.hp + 25, player.maxHp); showNotif("Used Health Potion! +25 HP", "#ef5350", 3); }
+            else showNotif("Not enough money! Need $50.", "#ef9a9a", 2);
         }
-        if (mx > 350 && mx < 470 && my > 440 && my < 472) showShop = false;
+        // BUY - Speed Boost
+        if (mx > 305 && mx < 510 && my > 126 && my < 164) {
+            if (speedBoostTimer > 0) { showNotif("Speed boost already active!", "#4fc3f7", 2); }
+            else if (player.money >= 100) { player.money -= 100; speedBoostTimer = 20; player.baseSpeed += 80; showNotif("Speed Boost active for 20s!", "#4fc3f7", 3); }
+            else showNotif("Not enough money! Need $100.", "#ef9a9a", 2);
+        }
+        // SELL buttons
+        if (mx > 160 && mx < 440) {
+            if (my > 193 && my < 231) { player.money += player.wood     * 5;  player.wood     = 0; }
+            if (my > 241 && my < 279) { player.money += player.leaves   * 2;  player.leaves   = 0; }
+            if (my > 289 && my < 327) { player.money += player.gel      * 10; player.gel      = 0; }
+            if (my > 337 && my < 375) { player.money += player.stone    * 3;  player.stone    = 0; }
+            if (my > 385 && my < 423) { player.money += player.crystals * 50; player.crystals = 0; }
+        }
+        if (mx > 340 && mx < 500 && my > 470 && my < 502) showShop = false;
         return;
     }
 
