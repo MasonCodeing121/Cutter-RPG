@@ -29,9 +29,25 @@ socket.on("room:player_left", (data) => {
     delete remotePlayers[data.player.id];
 });
 
+let pendingTeleport = null;
+
+function applyTeleport(data) {
+    const nx = parseFloat(data.x), ny = parseFloat(data.y);
+    if (isNaN(nx) || isNaN(ny)) return;
+    camera.x = nx;
+    camera.y = ny;
+    if (typeof showNotif === "function")
+        showNotif("Teleported!", "#ce93d8", 3);
+    console.log("[teleport] applied →", nx, ny);
+}
+
 socket.on("player:teleport", (data) => {
-    camera.x = data.x;
-    camera.y = data.y;
+    console.log("[teleport] received", data);
+    if (typeof gameState !== "undefined" && gameState === "GAME") {
+        applyTeleport(data);
+    } else {
+        pendingTeleport = data;
+    }
 });
 
 socket.on("player:set_resource", (data) => {
@@ -918,6 +934,7 @@ function animate(currentTime) {
                 if (player.swingTimer <= 0) player.isSwinging = false;
             }
             if (player.invuln > 0) player.invuln -= dt;
+            if (pendingTeleport) { applyTeleport(pendingTeleport); pendingTeleport = null; }
             if (notifTimer > 0) notifTimer -= dt;
             if (speedBoostTimer > 0) {
                 speedBoostTimer -= dt;
@@ -1510,6 +1527,7 @@ window.addEventListener("keydown", (e) => {
             initWorld(Date.now());
             gameState = "GAME";
             animate(performance.now());
+            if (pendingTeleport) { applyTeleport(pendingTeleport); pendingTeleport = null; }
         } else if (e.key === "Backspace") {
             typingName = typingName.slice(0, -1);
         } else if (e.key.length === 1) {
@@ -1843,6 +1861,7 @@ canvas.addEventListener("mousedown", (e) => {
                 initWorld(w.seed);
                 gameState = "GAME";
                 animate(performance.now());
+                if (pendingTeleport) { applyTeleport(pendingTeleport); pendingTeleport = null; }
             }
             if (
                 mx > 360 &&
@@ -1870,6 +1889,7 @@ canvas.addEventListener("mousedown", (e) => {
                 initWorld(12345);
                 gameState = "GAME";
                 animate(performance.now());
+                if (pendingTeleport) { applyTeleport(pendingTeleport); pendingTeleport = null; }
             }
             if (
                 mx > 360 &&
