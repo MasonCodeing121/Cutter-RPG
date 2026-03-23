@@ -372,8 +372,8 @@ function initWorld(seed) {
                     trees.push({ x, y, wood: 5, shake: 0, respawn: 0 });
                 else if (r > 0.65)
                     bushes.push({ x, y, health: 3, shake: 0, respawn: 0 });
-                else if (r > 0.56) spawnSlime(x, y);
-                else if (r > 0.55) spawnGoblin(x, y);
+                else if (r > 0.60) spawnSlime(x, y);
+                else if (r > 0.53) spawnGoblin(x, y);
                 else if (r > 0.42)
                     rocks.push({ x, y, hp: 8, maxHp: 8, shake: 0, respawn: 0 });
                 else if (r > 0.415)
