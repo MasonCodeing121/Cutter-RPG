@@ -56,25 +56,32 @@ socket.on("player:set_resource", (data) => {
         if (type === "wood") {
             player.wood = amount;
             player.totalWood = Math.max(player.totalWood, amount);
+            showNotif("Wood set to " + amount, "#a5d6a7", 2);
         } else if (type === "leaves") {
             player.leaves = amount;
             player.totalLeaves = Math.max(player.totalLeaves, amount);
+            showNotif("Leaves set to " + amount, "#c8e6c9", 2);
         } else if (type === "gel") {
             player.gel = amount;
             player.totalGel = Math.max(player.totalGel, amount);
+            showNotif("Gel set to " + amount, "#80cbc4", 2);
         } else if (type === "stone") {
             player.stone = amount;
             player.totalStone = Math.max(player.totalStone, amount);
+            showNotif("Stone set to " + amount, "#b0bec5", 2);
         } else if (type === "crystals") {
             player.crystals = amount;
             player.totalCrystals = Math.max(player.totalCrystals, amount);
+            showNotif("Crystals set to " + amount, "#ce93d8", 2);
         } else if (type === "money") {
             player.money = amount;
+            showNotif("Money set to $" + amount, "#ffd54f", 2);
         } else if (type === "hp") {
             player.hp = Math.min(amount, player.maxHp);
+            showNotif("HP set to " + amount, "#ef9a9a", 2);
         } else if (type === "x") {
             camera.x = amount;
-            if (typeof showNotif === "function") showNotif("Teleported!", "#ce93d8", 2);
+            showNotif("Teleported!", "#ce93d8", 2);
         } else if (type === "y") {
             camera.y = amount;
         }
