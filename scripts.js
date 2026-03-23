@@ -107,6 +107,7 @@ let lastTime = 0;
 let typingName = "";
 
 let showShop = false;
+let showPickaxeStore = false;
 let showQuestGiver = false;
 let showInventory = false;
 let questPage = 0;
@@ -138,6 +139,7 @@ let inventory = [
     { id: "log" },
     { id: "leaves" },
     { id: "slime_gel" },
+    { id: "empty" },
     { id: "empty" },
 ];
 let selectedSlot = 0;
@@ -171,11 +173,13 @@ let player = {
     axeLevel: 0,
     hpUpgrades: 0,
     speedUpgrades: 0,
+    pickaxeOwned: false,
 };
 
 let completedQuests = [];
 
 const shopBounds = { x: 700, y: 700, w: 250, h: 150 };
+const pickaxeStoreBounds = { x: 980, y: 700, w: 200, h: 150 };
 const questGiverPos = { x: 320, y: -80 };
 
 // ─── 5. QUESTS ───────────────────────────────────────────────────────────────
@@ -902,6 +906,66 @@ function drawShopUI() {
     drawButton(340, 520, 160, 30, "CLOSE", "#c62828");
 }
 
+function drawPickaxeStoreUI() {
+    ctx.fillStyle = "rgba(0,0,0,0.93)"; ctx.fillRect(100, 80, 400, 340);
+    ctx.strokeStyle = "#78909c"; ctx.lineWidth = 2; ctx.strokeRect(100, 80, 400, 340);
+
+    // Header
+    ctx.fillStyle = "#78909c"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
+    ctx.fillText("⛏", 300, 115);
+    ctx.fillStyle = "white"; ctx.font = "bold 20px Arial";
+    ctx.fillText("PICKAXE STORE", 300, 140);
+
+    ctx.fillStyle = "#b0bec5"; ctx.font = "13px Arial";
+    ctx.fillText("Forged for miners who mean business.", 300, 162);
+
+    // Divider
+    ctx.strokeStyle = "#455a64"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(120, 172); ctx.lineTo(480, 172); ctx.stroke();
+
+    // Stone Pickaxe
+    const owned = player.pickaxeOwned;
+    ctx.fillStyle = owned ? "#2e7d32" : "#37474f";
+    ctx.fillRect(120, 185, 360, 80);
+    ctx.strokeStyle = owned ? "#66bb6a" : "#78909c"; ctx.lineWidth = 2;
+    ctx.strokeRect(120, 185, 360, 80);
+
+    // Pickaxe icon (drawn with canvas)
+    ctx.save();
+    ctx.translate(165, 225);
+    ctx.strokeStyle = "#9e9e9e"; ctx.lineWidth = 4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-18, 18); ctx.lineTo(18, -18); ctx.stroke();
+    ctx.strokeStyle = "#bdbdbd"; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(5, -5); ctx.lineTo(22, -22); ctx.stroke();
+    ctx.strokeStyle = "#9e9e9e"; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(22, -22); ctx.lineTo(10, -30); ctx.stroke();
+    ctx.restore();
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial";
+    ctx.fillText("Stone Pickaxe", 195, 210);
+    ctx.fillStyle = "#b0bec5"; ctx.font = "12px Arial";
+    ctx.fillText("Mines rock 2× faster • 2× stone drops", 195, 228);
+    ctx.fillText("Also reveals crystals more often (+30%)", 195, 244);
+
+    if (owned) {
+        ctx.fillStyle = "#66bb6a"; ctx.font = "bold 13px Arial"; ctx.textAlign = "center";
+        ctx.fillText("OWNED ✓  (Press 6 to equip)", 300, 260);
+    } else {
+        ctx.fillStyle = "#ffd54f"; ctx.font = "bold 13px Arial"; ctx.textAlign = "center";
+        ctx.fillText("Cost: 5 Stone  (you have " + player.stone + ")", 300, 260);
+    }
+
+    ctx.textAlign = "center";
+    if (!owned) drawButton(160, 278, 280, 38, "BUY STONE PICKAXE", "#37474f");
+
+    // Info
+    ctx.fillStyle = "#546e7a"; ctx.font = "11px Arial";
+    ctx.fillText("Equip it (slot 6) and press Space near rocks", 300, 338);
+
+    drawButton(330, 350, 150, 30, "CLOSE", "#c62828");
+}
+
 // ─── 9. MAIN GAME LOOP ───────────────────────────────────────────────────────
 function animate(currentTime) {
     const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
@@ -1078,6 +1142,32 @@ function animate(currentTime) {
             shopBounds.w,
             shopBounds.h,
         );
+
+        // ── Pickaxe Store building ──
+        const ps = pickaxeStoreBounds;
+        ctx.fillStyle = "#4a4a5a";
+        ctx.fillRect(ps.x, ps.y, ps.w, ps.h);
+        // Roof
+        ctx.fillStyle = "#37474f";
+        ctx.beginPath();
+        ctx.moveTo(ps.x - 10, ps.y);
+        ctx.lineTo(ps.x + ps.w / 2, ps.y - 50);
+        ctx.lineTo(ps.x + ps.w + 10, ps.y);
+        ctx.closePath();
+        ctx.fill();
+        // Door
+        ctx.fillStyle = "#5d4037";
+        ctx.fillRect(ps.x + ps.w / 2 - 18, ps.y + ps.h - 55, 36, 55);
+        // Sign
+        ctx.fillStyle = "#795548";
+        ctx.fillRect(ps.x + 20, ps.y + 18, ps.w - 40, 32);
+        ctx.fillStyle = "#ffd54f"; ctx.font = "bold 13px Arial"; ctx.textAlign = "center";
+        ctx.fillText("⛏  PICKAXE SHOP", ps.x + ps.w / 2, ps.y + 40);
+        // Window
+        ctx.fillStyle = "#b0bec5";
+        ctx.fillRect(ps.x + 15, ps.y + 60, 40, 35);
+        ctx.fillRect(ps.x + ps.w - 55, ps.y + 60, 40, 35);
+
         drawQuestGiver(questGiverPos.x, questGiverPos.y);
 
         let drawList = [];

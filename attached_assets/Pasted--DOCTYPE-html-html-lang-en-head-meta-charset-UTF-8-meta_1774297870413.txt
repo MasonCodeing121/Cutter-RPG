@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cutter RPG | Admin Terminal</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root { 
+            --bg: #0b0f1a; --card: #161b2d; --text: #f8fafc; 
+            --primary: #38bdf8; --danger: #ef4444; --border: #2d3748; 
+            --success: #22c55e; --warning: #f59e0b;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        /* Login Box */
+        #login-container { margin-top: 100px; background: var(--card); padding: 40px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center; width: 380px; }
+        #login-container h1 { color: var(--primary); margin: 0; font-size: 1.8rem; }
+        input[type="password"], input[type="number"], input[type="text"] { 
+            width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid var(--border); 
+            background: #0f172a; color: white; box-sizing: border-box; 
+        }
+        .btn { width: 100%; padding: 12px; background: var(--primary); border: none; border-radius: 8px; color: #0b0f1a; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn:hover { filter: brightness(1.1); }
+
+        /* Dashboard */
+        #admin-dashboard { display: none; width: 100%; max-width: 1100px; }
+        .announcement-bar { background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid var(--warning); margin-bottom: 20px; display: flex; gap: 10px; }
+        
+        .room-section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 30px; }
+        .room-title { font-size: 1.2rem; font-weight: bold; color: var(--primary); margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        
+        /* Player Row Grid */
+        .player-row { 
+            display: grid; 
+            grid-template-columns: 1.5fr 4fr 1fr; 
+            gap: 20px; 
+            align-items: center; 
+            padding: 15px 0; 
+            border-bottom: 1px solid #2d3748; 
+        }
+        .player-info b { font-size: 1.1rem; color: var(--primary); }
+        .player-info span { font-size: 0.8rem; color: #64748b; }
+        
+        .controls-grid { display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }
+        .control-group { display: flex; flex-direction: column; }
+        .control-group label { font-size: 0.7rem; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; }
+        
+        .small-input { width: 80px !important; padding: 6px !important; margin: 0 !important; font-size: 0.85rem; text-align: center; }
+        .set-btn { padding: 8px 15px; background: var(--success); border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; }
+        .kick-btn { background: var(--danger); padding: 10px 15px; border-radius: 6px; border: none; color: white; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="login-container">
+        <h1>Admin Terminal</h1>
+        <p style="color: #94a3b8;">System Management & Player Control</p>
+        <input type="password" id="pass-input" placeholder="Management Password" onkeydown="if(event.key==='Enter') attemptLogin()">
+        <button class="btn" onclick="attemptLogin()">Log In</button>
+        <div id="error-msg" style="color: var(--danger); display:none; margin-top:10px;">Access Denied</div>
+    </div>
+
+    <div id="admin-dashboard">
+        <div class="announcement-bar">
+            <input type="text" id="announcement-text" placeholder="Send global server message..." style="margin:0; flex-grow: 1;">
+            <button class="btn" style="width: auto; padding: 0 20px;" onclick="sendAnnouncement()">Broadcast</button>
+        </div>
+
+        <h2 style="text-align:left">Active Sessions</h2>
+        <div id="room-list"></div>
+    </div>
+
+    <script>
+        // Update this to your actual Render URL
+        const socket = io("https://server-5jkd.onrender.com/");
+        let authenticated = false;
+        let isTyping = false;
+
+        function attemptLogin() {
+            const pass = document.getElementById('pass-input').value;
+            socket.emit("admin-login", pass);
+        }
+
+        socket.on("admin-confirmed", (rooms) => {
+            authenticated = true;
+            document.getElementById('login-container').style.display = 'none';
+            document.getElementById('admin-dashboard').style.display = 'block';
+            updateUI(rooms);
+        });
+
+        socket.on("admin-denied", () => {
+            document.getElementById('error-msg').style.display = 'block';
+        });
+
+        socket.on("admin-update", (rooms) => {
+            if (authenticated && !isTyping) updateUI(rooms);
+        });
+
+        function updateUI(rooms) {
+            const list = document.getElementById('room-list');
+            list.innerHTML = "";
+
+            if (Object.keys(rooms).length === 0) {
+                list.innerHTML = "<p style='color:#64748b'>No active players found.</p>";
+                return;
+            }
+
+            for (let roomName in rooms) {
+                let roomHtml = `<div class="room-section"><div class="room-title">World: ${roomName}</div>`;
+                
+                for (let id in rooms[roomName]) {
+                    const p = rooms[roomName][id];
+                    roomHtml += `
+                        <div class="player-row">
+                            <div class="player-info">
+                                <b>${p.name}</b><br>
+                                <span>ID: ${id}</span>
+                            </div>
+                            
+                            <div class="controls-grid">
+                                <div class="control-group">
+                                    <label>Wood</label>
+                                    <input type="number" class="small-input" id="wood-${id}" value="${p.wood || 0}" onfocus="isTyping=true" onblur="isTyping=false">
+                                </div>
+                                <div class="control-group">
+                                    <label>Money</label>
+                                    <input type="number" class="small-input" id="money-${id}" value="${p.money || 0}" onfocus="isTyping=true" onblur="isTyping=false">
+                                </div>
+                                <div class="control-group">
+                                    <label>Pos X</label>
+                                    <input type="number" class="small-input" id="x-${id}" value="${Math.round(p.x || 0)}" onfocus="isTyping=true" onblur="isTyping=false">
+                                </div>
+                                <div class="control-group">
+                                    <label>Pos Y</label>
+                                    <input type="number" class="small-input" id="y-${id}" value="${Math.round(p.y || 0)}" onfocus="isTyping=true" onblur="isTyping=false">
+                                </div>
+                                <button class="set-btn" onclick="updatePlayer('${id}')">UPDATE</button>
+                            </div>
+
+                            <div style="text-align:right">
+                                <button class="kick-btn" onclick="kick('${id}')">KICK</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                roomHtml += `</div>`;
+                list.innerHTML += roomHtml;
+            }
+        }
+
+        function updatePlayer(id) {
+            const wood = parseInt(document.getElementById(`wood-${id}`).value);
+            const money = parseInt(document.getElementById(`money-${id}`).value);
+            const x = parseInt(document.getElementById(`x-${id}`).value);
+            const y = parseInt(document.getElementById(`y-${id}`).value);
+            
+            // Emit individual updates as per your current server logic
+            socket.emit("admin-set-resource", { targetId: id, type: 'wood', amount: wood });
+            socket.emit("admin-set-resource", { targetId: id, type: 'money', amount: money });
+            socket.emit("admin-set-resource", { targetId: id, type: 'x', amount: x });
+            socket.emit("admin-set-resource", { targetId: id, type: 'y', amount: y });
+            
+            console.log(`Updated player ${id}`);
+            isTyping = false; 
+        }
+
+        function sendAnnouncement() {
+            const msg = document.getElementById('announcement-text').value;
+            if(msg) {
+                socket.emit("admin-announce", msg);
+                document.getElementById('announcement-text').value = "";
+                alert("Announcement broadcasted!");
+            }
+        }
+
+        function kick(id) {
+            if(confirm("Are you sure you want to disconnect this player?")) {
+                socket.emit("admin-kick", id);
+            }
+        }
+        // Add this to your HTML script tag
+        socket.on("admin-denied", () => {
+            alert("Invalid Password!");
+            document.getElementById('error-msg').style.display = 'block';
+        });
+    </script>
+</body>
+</html>
