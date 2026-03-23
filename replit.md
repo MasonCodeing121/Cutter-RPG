@@ -43,8 +43,10 @@ A top-down pixel art RPG game built with vanilla JavaScript and Canvas, with rea
 - Enemy dots shown on minimap (red = slime, green = goblin)
 
 ### Shop (near bottom-right of world)
-- **Buy:** Health Potion ($50, +25 HP), Speed Boost ($100, +80 speed for 20s)
-- **Sell:** Wood ($5), Leaves ($2), Gel ($10), Stone ($3), Crystals ($50)
+Three-tab shop UI (SELL / UPGRADES / POTIONS):
+- **SELL tab:** Wood ($5), Leaves ($2), Gel ($10), Stone ($3), Crystals ($50)
+- **UPGRADES tab:** Buy Bow ($300), Craft Arrows (5 Wood → 15), Axe Upgrade Lv1-3 ($200/$400/$700), Max HP +30 ($250 ×5), Speed +20 ($200 ×5)
+- **POTIONS tab:** Health Potion ($50, +25 HP), Mega Potion ($120, +60 HP), Speed Boost ($100, 20s)
 
 ### Quests
 - 16 quests from the Quest Giver NPC (top-center of world)
@@ -59,4 +61,5 @@ A top-down pixel art RPG game built with vanilla JavaScript and Canvas, with rea
 - **Space** — Swing axe (chop, mine, attack)
 - **E** — Interact (Shop/Quest Giver nearby) or open Inventory
 - **ESC** — Close any UI panel
-- **1-4** — Select hotbar slot
+- **1-5** — Select hotbar slot (slot 5 = bow when purchased)
+- **Space (bow)** — Fire arrow in facing direction (uses ammo)
