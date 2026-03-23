@@ -104,6 +104,8 @@ let particles = [];
 let speedBoostTimer = 0;
 let arrows = [];
 let shopTab = "sell";
+const MOB_CAP = 4;
+let mobRespawnTimer = 0;
 
 let camera = { x: 0, y: 0 };
 let trees = [],
@@ -391,6 +393,7 @@ function initWorld(seed) {
 }
 
 function spawnSlime(x, y) {
+    if (mobs.length >= MOB_CAP) return;
     mobs.push({
         x,
         y,
@@ -407,6 +410,7 @@ function spawnSlime(x, y) {
 }
 
 function spawnGoblin(x, y) {
+    if (mobs.length >= MOB_CAP) return;
     mobs.push({
         x,
         y,
@@ -921,6 +925,21 @@ function animate(currentTime) {
                     player.baseSpeed -= 80;
                     speedBoostTimer = 0;
                 }
+            }
+            // Mob cap respawn: keep exactly MOB_CAP enemies alive
+            if (mobs.length < MOB_CAP) {
+                mobRespawnTimer -= dt;
+                if (mobRespawnTimer <= 0) {
+                    mobRespawnTimer = 5; // respawn every 5s
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = 400 + Math.random() * 200;
+                    const rx = camera.x + Math.cos(angle) * dist;
+                    const ry = camera.y + Math.sin(angle) * dist;
+                    if (Math.random() < 0.4) spawnSlime(rx, ry);
+                    else spawnGoblin(rx, ry);
+                }
+            } else {
+                mobRespawnTimer = 5;
             }
 
             worldTime = (worldTime + dt / 300) % 1;
