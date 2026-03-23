@@ -7,7 +7,7 @@ ctx.imageSmoothingEnabled = false;
 document.body.appendChild(canvas);
 
 // ─── 2. NETWORKING ──────────────────────────────────────────────────────────
-const socket = io("https://server-5jkd.onrender.com/", {
+const socket = io(window.location.origin, {
     transports: ["websocket", "polling"],
 });
 let remotePlayers = {};
