@@ -72,6 +72,11 @@ socket.on("player:set_resource", (data) => {
             player.money = amount;
         } else if (type === "hp") {
             player.hp = Math.min(amount, player.maxHp);
+        } else if (type === "x") {
+            camera.x = amount;
+            if (typeof showNotif === "function") showNotif("Teleported!", "#ce93d8", 2);
+        } else if (type === "y") {
+            camera.y = amount;
         }
     }
 });
